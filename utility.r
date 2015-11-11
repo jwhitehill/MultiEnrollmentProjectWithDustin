@@ -1,6 +1,6 @@
 loadData <- function (filename) {
 	d <- read.csv(filename, header = TRUE)
-	d <- d[,c("numCoursesAll", "continent", "LoE", "YoB", "gender")]
+	d <- d[,c("numCoursesAll", "numCoursesAlumni", "numCoursesHealthSciences", "numCoursesHumanities", "numCoursesSTEM", "numCoursesSocialSciences", "continent", "LoE", "YoB", "gender")]
 
 	# Remove rows with missing values
 	d <- d[complete.cases(d),]
