@@ -1,6 +1,6 @@
 loadData <- function (filename) {
 	d <- read.csv(filename, header = TRUE)
-	d <- d[,c("numCoursesAll", "numCoursesAlumni", "numCoursesHealthSciences", "numCoursesHumanities", "numCoursesSTEM", "numCoursesSocialSciences", "continent", "LoE", "YoB", "gender")]
+	d <- d[,c("numCoursesAll", "numCoursesHealthSciences", "numCoursesHumanities", "numCoursesSTEM", "numCoursesSocialSciences", "continent", "LoE", "YoB", "gender")]
 
 	# Remove rows with missing values
 	d <- d[complete.cases(d),]
@@ -15,6 +15,7 @@ loadData <- function (filename) {
 	d <- d[d$LoE != "Learn",]
 
 	d$ageRange <- cut(2012 - d$YoB, c(-Inf, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, Inf))
+	d$age <- 2012 - d$YoB
 
 	# Rename education variables to make them more readable (code from Dustin)
 	d$LoE <- as.character(d$LoE)  # Convert from factor to character type so we can rename
