@@ -26,7 +26,7 @@ def getNonNullData (d):
 #	return ivMaps
 
 def loadTrainingSet ():
-	d = pandas.io.parsers.read_csv('train22Oct2015.csv')
+	d = pandas.io.parsers.read_csv('train.csv')
 	d = d[common.FIELDS + [ common.TARGET_VARIABLE ]]
 	d = getNonNullData(d)
 
