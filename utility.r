@@ -15,7 +15,7 @@ loadData <- function (filename) {
 	d <- d[d$LoE != "Learn",]
 
 	d$ageRange <- cut(2012 - d$YoB, c(-Inf, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, Inf))
-	d$age <- 2012 - d$YoB
+	#d$age <- 2012 - d$YoB
 
 	# Rename education variables to make them more readable (code from Dustin)
 	d$LoE <- as.character(d$LoE)  # Convert from factor to character type so we can rename
@@ -30,6 +30,12 @@ loadData <- function (filename) {
 	d$LoE[d$LoE=="p_oth"]<-"professional/post-masters"
 	d$LoE[d$LoE=="p_se"]<-"professional/post-masters"
 	d$LoE <- as.factor(d$LoE)
+	d$LoE <- factor(d$LoE, levels = c("no education", "elementary school", "junior high school", "high school", "associate",
+	                                  "bachelor", "master", "professional/post-masters",
+					  "professional/post-masters", "professional/post-masters"))  # Reorder factors
+	d$LoE <- relevel(d$LoE, ref = "no education")
+
+	d$continent <- relevel(d$continent, ref = "North America")
 
 	return(d);
 }

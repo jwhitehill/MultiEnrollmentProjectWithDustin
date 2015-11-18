@@ -12,17 +12,19 @@ for (j in 1:length(disciplines)) {
 	comparisons <- c("0_v_MoreThan0", "1_v_MoreThan1", "AtMost4_v_4OrMore")
 	names(models) <- comparisons
 
-	d$take0OrMore <- d[paste("numCourses", discipline, sep="")] > 0
+	d$take0OrMore <- c(d[paste("numCourses", discipline, sep="")] > 0)
 	# Subselect those people who take >0 courses in the specified discipline
 	e <- d[d$take0OrMore,]
-	e$take1OrMore <- e[paste("numCourses", discipline, sep="")] > 1
-	e$take4OrMore <- e[paste("numCourses", discipline, sep="")] > 4
+	e$take1OrMore <- c(e[paste("numCourses", discipline, sep="")] > 1)
+	e$take4OrMore <- c(e[paste("numCourses", discipline, sep="")] > 4)
 
-	model <- glm(take0OrMore ~ continent + LoE + age + gender, family = "binomial", data = d)
+	model <- glm(take0OrMore ~ continent + LoE + ageRange + gender, family = "binomial", data = d)
 	models[[1]] <- model
-	model <- glm(take1OrMore ~ continent + LoE + age + gender, family = "binomial", data = e)
+
+	model <- glm(take1OrMore ~ continent + LoE + ageRange + gender, family = "binomial", data = e)
 	models[[2]] <- model
-	model <- glm(take4OrMore ~ continent + LoE + age + gender, family = "binomial", data = e)
+
+	model <- glm(take4OrMore ~ continent + LoE + ageRange + gender, family = "binomial", data = e)
 	models[[3]] <- model
 
 	filename <- paste("models_", discipline, ".pdf", sep="")
