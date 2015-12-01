@@ -1,4 +1,5 @@
 import pandas
+import common
 import numpy as np
 
 def computeNumCourses (allDisciplines, disciplines, idxs):
@@ -48,10 +49,27 @@ def splitAndWrite (e, allDisciplines, trainFrac, testFrac, trainFilename, testFi
 	f.iloc[testIdxs].to_csv(testFilename, index=False)
 	f.iloc[holdoutIdxs].to_csv(holdoutFilename, index=False)
 
+def convertStartTimes (d):
+	goodIdxs = []
+	idx = 0
+	startDates = []
+	for dateStr in d.start_time:
+		try:
+			date = np.datetime64(dateStr[0:10])  # "0:10" -- only extract the date
+			startDates.append(date)
+			goodIdxs.append(idx)
+		except:
+			pass
+		idx += 1
+	d = d.iloc[goodIdxs]
+	startDates = np.array(startDates, dtype=np.datetime64)
+	d.start_time = startDates
+	return d
+
 def createIndividualEnrollmentDataset ():
 	d, disciplines, allDisciplines = getEnrollmentsAndDisciplines()
-	demographicFields = [ 'continent', 'LoE', 'YoB', 'gender' ]
-	fields = [ 'course_id', 'certified', 'start_time', 'user_id' ] + demographicFields
+	d = convertStartTimes(d)
+	fields = [ 'course_id', 'certified', 'start_time', 'user_id' ] + common.DEMOGRAPHIC_FIELDS
 	d = d[fields]
 
 	# Remove all rows containing any NaNs
@@ -65,7 +83,7 @@ def createIndividualEnrollmentDataset ():
 	# Create maps from userId to demographics, and from userId to their indices in a table
 	userIdsDemographics = d.drop_duplicates(subset="user_id")
 	allUserIds = list(userIdsDemographics.user_id)
-	userIdsDemographics = userIdsDemographics[demographicFields]
+	userIdsDemographics = userIdsDemographics[common.DEMOGRAPHIC_FIELDS]
 	userIdsDemographics = userIdsDemographics.as_matrix()
 	userIdsIdxsMap = { allUserIds[i]:i for i in range(len(allUserIds)) }
 	
@@ -88,7 +106,7 @@ def createIndividualEnrollmentDataset ():
 	f = np.concatenate((userIdsDemographics, e), axis=1)
 
 	# Split and write to disk
-	columns = list(demographicFields)
+	columns = list(common.DEMOGRAPHIC_FIELDS)
 	for i in range(len(uniqueCourseIds)):
 		courseName = uniqueCourseIds[i].replace(" ", "").replace("/", "_")
 		columns.append("start_" + courseName + "_beforeT")

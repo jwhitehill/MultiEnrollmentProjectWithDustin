@@ -1,10 +1,15 @@
 import pandas
+import sklearn
 import numpy as np
 import common
 
+def makeLabels (y):
+	labels = np.hstack((1 - np.atleast_2d(y).T, np.atleast_2d(y).T)).astype(np.float64)
+	return labels
+
 def showProgress (cross_entropy, x, y, y_, test_x, test_y):
-	ll = cross_entropy.eval({x: test_x, y_: makeLabels(test_y)})
-	auc = sklearn.metrics.roc_auc_score(test_y, y.eval({x: test_x})[:,1])
+	ll = cross_entropy.eval({x: test_x, y_: test_y})
+	auc = sklearn.metrics.roc_auc_score(test_y[:,1], y.eval({x: test_x})[:,1])
 	print "LL={} AUC={}".format(ll, auc)
 
 def getNonNullData (d):
