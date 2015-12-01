@@ -2,6 +2,11 @@ import pandas
 import numpy as np
 import common
 
+def showProgress (cross_entropy, x, y, y_, test_x, test_y):
+	ll = cross_entropy.eval({x: test_x, y_: makeLabels(test_y)})
+	auc = sklearn.metrics.roc_auc_score(test_y, y.eval({x: test_x})[:,1])
+	print "LL={} AUC={}".format(ll, auc)
+
 def getNonNullData (d):
 	# Restrict to rows that are not null
 	idxs = np.nonzero(np.sum(d[common.FIELDS].isnull(), axis=1) == 0)[0]

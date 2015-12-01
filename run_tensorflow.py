@@ -12,11 +12,6 @@ def makeLabels (y):
 	labels = np.hstack((1 - np.atleast_2d(y).T, np.atleast_2d(y).T)).astype(np.float64)
 	return labels
 
-def showProgress (cross_entropy, x, y, y_, test_x, test_y):
-	ll = cross_entropy.eval({x: test_x, y_: makeLabels(test_y)})
-	auc = sklearn.metrics.roc_auc_score(test_y, y.eval({x: test_x})[:,1])
-	print "LL={} AUC={}".format(ll, auc)
-
 def runMLR (train_x, train_y, test_x, test_y):
 	print "MLR"
 	session = tf.InteractiveSession()
@@ -38,7 +33,7 @@ def runMLR (train_x, train_y, test_x, test_y):
 		offset = i*BATCH_SIZE % (train_x.shape[0] - BATCH_SIZE)
 		train_step.run({x: train_x[offset:offset+BATCH_SIZE, :], y_: makeLabels(train_y[offset:offset+BATCH_SIZE])})
 		if i % 100 == 0:
-			showProgress(cross_entropy, x, y, y_, test_x, test_y)
+			util.showProgress(cross_entropy, x, y, y_, test_x, test_y)
 	session.close()
 
 def runNN (train_x, train_y, test_x, test_y, numHidden):
@@ -66,7 +61,7 @@ def runNN (train_x, train_y, test_x, test_y, numHidden):
 		offset = i*BATCH_SIZE % (train_x.shape[0] - BATCH_SIZE)
 		train_step.run({x: train_x[offset:offset+BATCH_SIZE, :], y_: makeLabels(train_y[offset:offset+BATCH_SIZE])})
 		if i % 100 == 0:
-			showProgress(cross_entropy, x, y, y_, test_x, test_y)
+			util.showProgress(cross_entropy, x, y, y_, test_x, test_y)
 	session.close()
 
 if __name__ == "__main__":
