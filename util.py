@@ -7,9 +7,13 @@ def makeLabels (y):
 	labels = np.hstack((1 - np.atleast_2d(y).T, np.atleast_2d(y).T)).astype(np.float64)
 	return labels
 
-def showProgress (cross_entropy, x, y, y_, test_x, test_y):
-	ll = cross_entropy.eval({x: test_x, y_: test_y})
-	auc = sklearn.metrics.roc_auc_score(test_y[:,1], y.eval({x: test_x})[:,1])
+def showProgress (cross_entropy, x, y, y_, test_x, test_y, keep_prob = None):
+	if keep_prob == None:
+		ll = cross_entropy.eval({x: test_x, y_: test_y})
+		auc = sklearn.metrics.roc_auc_score(test_y[:,1], y.eval({x: test_x})[:,1])
+	else:
+		ll = cross_entropy.eval({x: test_x, y_: test_y, keep_prob: 1.})
+		auc = sklearn.metrics.roc_auc_score(test_y[:,1], y.eval({x: test_x, keep_prob: 1.})[:,1])
 	print "LL={} AUC={}".format(ll, auc)
 
 def getNonNullData (d):
