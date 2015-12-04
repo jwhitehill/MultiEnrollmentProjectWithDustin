@@ -76,7 +76,7 @@ def convertStartTimes (d):
 def createIndividualEnrollmentDataset ():
 	d, disciplines, allDisciplines = getEnrollmentsAndDisciplines()
 	d = convertStartTimes(d)
-	fields = [ 'course_id', 'explored', 'start_time', 'user_id', 'ndays_act'  ] + common.DEMOGRAPHIC_FIELDS
+	fields = [ 'course_id', 'explored', 'certified', 'start_time', 'user_id', 'ndays_act'  ] + common.DEMOGRAPHIC_FIELDS
 	d = d[fields]
 
 	# Remove all rows containing any NaNs
