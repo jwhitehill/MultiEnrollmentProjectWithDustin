@@ -5,8 +5,8 @@ import numpy as np
 import pandas
 import sklearn.metrics
 
-NUM_EPOCHS = 10000
-BATCH_SIZE = 1000
+NUM_EPOCHS = 2000
+BATCH_SIZE = 100
 
 def makeVariable (shape, stddev, wd):
 	var = tf.Variable(tf.truncated_normal(shape, stddev=stddev))
@@ -14,7 +14,34 @@ def makeVariable (shape, stddev, wd):
 	tf.add_to_collection('losses', weight_decay)
 	return var
 
-def runNN (train_x, train_y, test_x, test_y, numHidden):
+def runMLR (train_x, train_y, test_x, test_y, numEpochs = NUM_EPOCHS):
+	print "MLR"
+	with tf.Graph().as_default():
+		session = tf.InteractiveSession()
+
+		x = tf.placeholder("float", shape=[None, train_x.shape[1]])
+		y_ = tf.placeholder("float", shape=[None, train_y.shape[1]])
+
+		W1 = makeVariable([train_x.shape[1],numHidden], stddev=0.5, wd=1e0)
+		b1 = makeVariable([train_y.shape[1]], stddev=0.5, wd=1e0)
+
+		y = tf.nn.softmax(tf.matmul(x,W1) + b1)
+
+		cross_entropy = -tf.reduce_sum(y_*tf.log(tf.clip_by_value(y,1e-10,1.0)), name='cross_entropy')
+		tf.add_to_collection('losses', cross_entropy)
+		total_loss = tf.add_n(tf.get_collection('losses'), name='total_loss')
+
+		train_step = tf.train.GradientDescentOptimizer(learning_rate=.001).minimize(total_loss)
+
+		session.run(tf.initialize_all_variables())
+		for i in range(numEpochs):
+			offset = i*BATCH_SIZE % (train_x.shape[0] - BATCH_SIZE)
+			train_step.run({x: train_x[offset:offset+BATCH_SIZE, :], y_: train_y[offset:offset+BATCH_SIZE, :]})
+			if i % 100 == 0:
+				util.showProgress(cross_entropy, x, y, y_, test_x, test_y)
+		session.close()
+
+def runNN (train_x, train_y, test_x, test_y, numHidden, numEpochs = NUM_EPOCHS):
 	print "NN({})".format(numHidden)
 	with tf.Graph().as_default():
 		session = tf.InteractiveSession()
@@ -23,8 +50,8 @@ def runNN (train_x, train_y, test_x, test_y, numHidden):
 		y_ = tf.placeholder("float", shape=[None, train_y.shape[1]])
 		keep_prob = tf.placeholder("float")
 
-		W1 = makeVariable([train_x.shape[1],numHidden], stddev=0.05, wd=1e0)
-		b1 = makeVariable([numHidden], stddev=0.05, wd=1e0)
+		W1 = makeVariable([train_x.shape[1],numHidden], stddev=0.05, wd=1e1)
+		b1 = makeVariable([numHidden], stddev=0.05, wd=1e1)
 		W2 = makeVariable([numHidden,train_y.shape[1]], stddev=0.05, wd=1e0)
 		b2 = makeVariable([train_y.shape[1]], stddev=0.05, wd=1e0)
 
@@ -37,13 +64,13 @@ def runNN (train_x, train_y, test_x, test_y, numHidden):
 		tf.add_to_collection('losses', cross_entropy)
 		total_loss = tf.add_n(tf.get_collection('losses'), name='total_loss')
 
-		train_step = tf.train.MomentumOptimizer(learning_rate=.0001, momentum=0.1).minimize(total_loss)
-		#train_step = tf.train.AdamOptimizer(learning_rate=.01).minimize(total_loss)
+		train_step = tf.train.MomentumOptimizer(learning_rate=.001, momentum=0.1).minimize(total_loss)
+		#train_step = tf.train.AdamOptimizer(learning_rate=.001).minimize(total_loss)
 
 		session.run(tf.initialize_all_variables())
-		for i in range(NUM_EPOCHS):
+		for i in range(numEpochs):
 			offset = i*BATCH_SIZE % (train_x.shape[0] - BATCH_SIZE)
-			train_step.run({x: train_x[offset:offset+BATCH_SIZE, :], y_: train_y[offset:offset+BATCH_SIZE, :], keep_prob: 0.2})
+			train_step.run({x: train_x[offset:offset+BATCH_SIZE, :], y_: train_y[offset:offset+BATCH_SIZE, :], keep_prob: 0.1})
 			if i % 100 == 0:
 				util.showProgress(cross_entropy, x, y, y_, test_x, test_y, keep_prob)
 		session.close()
@@ -57,8 +84,8 @@ def loadDataset (filename, courseId, T, requiredCols = None):
 	#e = d.iloc[idxs]
 	#idxs1 = np.nonzero(e.start_time >= T)[0]
 	#idxs2 = np.nonzero(e.start_time < T)[0]
-	#print np.corrcoef(e.iloc[idxs1].YoB, e.iloc[idxs1].certified)
-	#print np.corrcoef(e.iloc[idxs2].YoB, e.iloc[idxs2].certified)
+	#print np.corrcoef(e.iloc[idxs1].YoB, e.iloc[idxs1].explored)
+	#print np.corrcoef(e.iloc[idxs2].YoB, e.iloc[idxs2].explored)
 
 	# Only analyze rows belonging to users who participated in the courseId after T
 	afterIdxs = np.nonzero(d.start_time >= T)[0]
@@ -70,7 +97,7 @@ def loadDataset (filename, courseId, T, requiredCols = None):
 	# Compute labels (i.e., whether each user explored the specified course)
 	userIdsLabelsMap = dict(zip(e.user_id, e.explored))
 		
-	# Remove rows occurring before T
+	# Only analyze rows occurring before T
 	idxs = np.nonzero(d.start_time < T)[0]
 	d = d.iloc[idxs]
 	
@@ -93,8 +120,8 @@ def loadDataset (filename, courseId, T, requiredCols = None):
 	# Combine demographics and course matrices into x
 	courses = courses.reset_index()
 	demographics = demographics.reset_index()
-	x = demographics
-	#x = pandas.concat([ demographics, courses ], axis=1)
+	#x = demographics  # DEMOGRAPHICS ONLY
+	x = pandas.concat([ demographics, courses ], axis=1)  # ALL FEATURES
 	x = x.drop('index', 1)
 	x = x.drop('user_id', 1)
 	if requiredCols != None:
@@ -120,12 +147,11 @@ def computeT (courseId):
 	T = START_T + np.timedelta64(28, 'D')  # Add 4 weeks
 	return T
 
-def initializeAllData ():
-	COURSE_ID = "HarvardX/MCB63X/3T2015"
-	T = computeT(COURSE_ID)
+def initializeAllData (courseId):
+	T = computeT(courseId)
 	print T
-	train_x, train_y, colNames = loadDataset("train_individual.csv", COURSE_ID, T)
-	test_x, test_y, _ = loadDataset("test_individual.csv", COURSE_ID, T, list(colNames))
+	train_x, train_y, colNames = loadDataset("train_individual.csv", courseId, T)
+	test_x, test_y, _ = loadDataset("test_individual.csv", courseId, T, list(colNames))
 
 	# Normalize data
 	normalize = True
@@ -142,8 +168,10 @@ def initializeAllData ():
 	return train_x, train_y, test_x, test_y, colNames
 
 if __name__ == "__main__":
+	#COURSE_ID = "HarvardX/SW12.5x/2T2014"
+	COURSE_ID = "HarvardX/ER22.1x/1T2014"
 	if 'train_x' not in globals():
-		train_x, train_y, test_x, test_y, colNames= initializeAllData()
+		train_x, train_y, test_x, test_y, colNames = initializeAllData(COURSE_ID)
 
 	for numHidden in range(2, 20, 2):
 		runNN(train_x, train_y, test_x, test_y, numHidden)
