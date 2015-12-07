@@ -8,8 +8,8 @@ import sklearn.metrics
 NUM_EPOCHS = 2000
 BATCH_SIZE = 100
 
-def makeVariable (shape, stddev, wd):
-	var = tf.Variable(tf.truncated_normal(shape, stddev=stddev))
+def makeVariable (shape, stddev, wd, name):
+	var = tf.Variable(tf.truncated_normal(shape, stddev=stddev), name=name)
 	weight_decay = tf.mul(tf.nn.l2_loss(var), wd, name='weight_loss')
 	tf.add_to_collection('losses', weight_decay)
 	return var
@@ -112,8 +112,8 @@ def loadDataset (filename, courseId, T, requiredCols = None):
 	# Combine demographics and course matrices into x
 	courses = courses.reset_index()
 	demographics = demographics.reset_index()
-	#x = demographics  # DEMOGRAPHICS ONLY
-	x = pandas.concat([ demographics, courses ], axis=1)  # ALL FEATURES
+	x = demographics  # DEMOGRAPHICS ONLY
+	#x = pandas.concat([ demographics, courses ], axis=1)  # ALL FEATURES
 	x = x.drop('index', 1)
 	x = x.drop('user_id', 1)
 	if requiredCols != None:
@@ -158,8 +158,46 @@ def initializeAllData (courseId):
 
 	return train_x, train_y, test_x, test_y, colNames
 
-def runLLL_NN (all_train_x, all_train_y, all_test_x, all_test_y):
-	pass
+def runLLL_NN (train_x, train_y, test_x, test_y, numHidden, courseIds):
+	def fixGradients (grads_and_vars):
+		#for gv in grads_and_vars:
+		#	if gv[1] == "W2":
+		#		gv[0] = tf.
+		pass
+
+	with tf.Graph().as_default():
+		session = tf.InteractiveSession()
+		x = tf.placeholder("float", shape=[None, train_x.shape[1]])
+		y_ = tf.placeholder("float", shape=[None, train_y.shape[1]])
+
+		W1 = makeVariable([train_x.shape[1],numHidden], stddev=0.05, wd=1e1, name="W1")
+		b1 = makeVariable([numHidden], stddev=0.05, wd=1e1, name="b1")
+		W2 = makeVariable([numHidden,train_y.shape[1]], stddev=0.05, wd=1e0, name="W2")
+
+		level1 = tf.matmul(x,W1) + b1
+		level2 = tf.matmul(level1,W2)
+		level3 = tf.sigmoid(level2)
+		y = level3
+
+		cross_entropy = -tf.reduce_sum(y_*tf.log(tf.clip_by_value(y,1e-10,1.0)) +
+		                               (1-y_)*tf.log(tf.clip_by_value(1-y,1e-10,1.0)), name='cross_entropy')
+		tf.add_to_collection('losses', cross_entropy)
+		total_loss = tf.add_n(tf.get_collection('losses'), name='total_loss')
+
+		train_step = tf.train.GradientDescentOptimizer(learning_rate=.001)
+		#train_step = tf.train.MomentumOptimizer(learning_rate=.001, momentum=0.1)
+		#train_step = tf.train.AdamOptimizer(learning_rate=.001)
+
+		session.run(tf.initialize_all_variables())
+		for i in range(NUM_EPOCHS):
+			offset = i*BATCH_SIZE % (train_x.shape[0] - BATCH_SIZE)
+			grads_and_vars = train_step.compute_gradients(total_loss)
+			fixGradients(grads_and_vars)
+			op = train_step.apply_gradients(grads_and_vars)
+			op.run({x: train_x[offset:offset+BATCH_SIZE, :], y_: train_y[offset:offset+BATCH_SIZE, :]})
+			if i % 100 == 0:
+				util.showProgressAll(cross_entropy, x, y, y_, test_x, test_y, courseIds)
+		session.close()
 
 # Life-long learning (LLL) experiment
 def runLLLExperiments ():
@@ -167,20 +205,20 @@ def runLLLExperiments ():
 	# and copies y into the matrix at the specified index.
 	def convertY (y, index, nCols):
 		convertedY = np.zeros((y.shape[0], nCols), dtype=y.dtype)
-		convertedY[:, 2*index] = y[:, 0]
-		convertedY[:, 2*index+1] = y[:, 1]
+		convertedY[:, index] = y[:, 1]  # index 1 of y corresponds to positive category
 		return convertedY
 
 	# Get list of all course_id's
-	d = pandas.io.parsers.read_csv("train_individual.csv")
-	courseIds = np.unique(d.course_id)
+	#d = pandas.io.parsers.read_csv("train_individual.csv")
+	#courseIds = np.unique(d.course_id)
+	courseIds = [ "HarvardX/HUM2.5x/3T2014", "HarvardX/SW12.10x/1T2015" ]
 
 	# Initialize training and testing matrices
 	train_x, train_y, colNames = loadDataset("train_individual.csv", courseIds[0], computeT(courseIds[0]))
 	all_train_x = np.zeros((0, train_x.shape[1]), dtype=train_x.dtype)
-	all_train_y = np.zeros((0, train_y.shape[1] * len(courseIds)), dtype=train_y.dtype)
+	all_train_y = np.zeros((0, len(courseIds)), dtype=train_y.dtype)
 	all_test_x = np.zeros((0, train_x.shape[1]), dtype=train_x.dtype)
-	all_test_y = np.zeros((0, train_y.shape[1] * len(courseIds)), dtype=train_y.dtype)
+	all_test_y = np.zeros((0, len(courseIds)), dtype=train_y.dtype)
 	
 	# Collect training and testing data for all courses
 	print "Loading data for..."
@@ -191,9 +229,9 @@ def runLLLExperiments ():
 		test_x, test_y, _ = loadDataset("test_individual.csv", courseId, T, list(colNames))
 
 		all_train_x = np.vstack((all_train_x, train_x))
-		all_train_y = np.vstack((all_train_y, convertY(train_y, i, len(courseIds) * 2)))
+		all_train_y = np.vstack((all_train_y, convertY(train_y, i, len(courseIds))))
 		all_test_x = np.vstack((all_test_x, test_x))
-		all_test_y = np.vstack((all_test_y, convertY(test_y, i, len(courseIds) * 2)))
+		all_test_y = np.vstack((all_test_y, convertY(test_y, i, len(courseIds))))
 
 	# Normalize data
 	mx = np.mean(all_train_x, axis=0)
@@ -205,7 +243,8 @@ def runLLLExperiments ():
 	all_test_x -= np.tile(np.atleast_2d(mx), (all_test_x.shape[0], 1))
 	all_test_x /= np.tile(np.atleast_2d(sx), (all_test_x.shape[0], 1))
 
-	runLLL_NN(all_train_x, all_train_y, all_test_x, all_test_y)
+	for numHidden in range(2, 20, 2):
+		runLLL_NN(all_train_x, all_train_y, all_test_x, all_test_y, numHidden, courseIds)
 
 def runNNExperiments ():
 	#COURSE_ID = "HarvardX/SW12.5x/2T2014"
