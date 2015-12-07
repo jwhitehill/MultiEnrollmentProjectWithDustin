@@ -79,14 +79,6 @@ def loadDataset (filename, courseId, T, requiredCols = None):
 	d = pandas.io.parsers.read_csv(filename)
 	d.start_time = d.start_time.astype(np.datetime64)
 
-	# Debugging
-	#idxs = np.nonzero(d.course_id == courseId)[0]
-	#e = d.iloc[idxs]
-	#idxs1 = np.nonzero(e.start_time >= T)[0]
-	#idxs2 = np.nonzero(e.start_time < T)[0]
-	#print np.corrcoef(e.iloc[idxs1].YoB, e.iloc[idxs1].explored)
-	#print np.corrcoef(e.iloc[idxs2].YoB, e.iloc[idxs2].explored)
-
 	# Only analyze rows belonging to users who participated in the courseId after T
 	afterIdxs = np.nonzero(d.start_time >= T)[0]
 	e = d.iloc[afterIdxs]
@@ -149,7 +141,6 @@ def computeT (courseId):
 
 def initializeAllData (courseId):
 	T = computeT(courseId)
-	print T
 	train_x, train_y, colNames = loadDataset("train_individual.csv", courseId, T)
 	test_x, test_y, _ = loadDataset("test_individual.csv", courseId, T, list(colNames))
 
@@ -167,7 +158,56 @@ def initializeAllData (courseId):
 
 	return train_x, train_y, test_x, test_y, colNames
 
-if __name__ == "__main__":
+def runLLL_NN (all_train_x, all_train_y, all_test_x, all_test_y):
+	pass
+
+# Life-long learning (LLL) experiment
+def runLLLExperiments ():
+	# Converts from a two-column binary label vector into a matrix with nCols
+	# and copies y into the matrix at the specified index.
+	def convertY (y, index, nCols):
+		convertedY = np.zeros((y.shape[0], nCols), dtype=y.dtype)
+		convertedY[:, 2*index] = y[:, 0]
+		convertedY[:, 2*index+1] = y[:, 1]
+		return convertedY
+
+	# Get list of all course_id's
+	d = pandas.io.parsers.read_csv("train_individual.csv")
+	courseIds = np.unique(d.course_id)
+
+	# Initialize training and testing matrices
+	train_x, train_y, colNames = loadDataset("train_individual.csv", courseIds[0], computeT(courseIds[0]))
+	all_train_x = np.zeros((0, train_x.shape[1]), dtype=train_x.dtype)
+	all_train_y = np.zeros((0, train_y.shape[1] * len(courseIds)), dtype=train_y.dtype)
+	all_test_x = np.zeros((0, train_x.shape[1]), dtype=train_x.dtype)
+	all_test_y = np.zeros((0, train_y.shape[1] * len(courseIds)), dtype=train_y.dtype)
+	
+	# Collect training and testing data for all courses
+	print "Loading data for..."
+	for i, courseId in enumerate(courseIds):
+		print courseId
+		T = computeT(courseId)
+		train_x, train_y, _ = loadDataset("train_individual.csv", courseId, T, list(colNames))
+		test_x, test_y, _ = loadDataset("test_individual.csv", courseId, T, list(colNames))
+
+		all_train_x = np.vstack((all_train_x, train_x))
+		all_train_y = np.vstack((all_train_y, convertY(train_y, i, len(courseIds) * 2)))
+		all_test_x = np.vstack((all_test_x, test_x))
+		all_test_y = np.vstack((all_test_y, convertY(test_y, i, len(courseIds) * 2)))
+
+	# Normalize data
+	mx = np.mean(all_train_x, axis=0)
+	sx = np.std(all_train_x, axis=0)
+	sx[sx == 0] = 1
+	all_train_x -= np.tile(np.atleast_2d(mx), (all_train_x.shape[0], 1))
+	all_train_x /= np.tile(np.atleast_2d(sx), (all_train_x.shape[0], 1))
+	# Scale testing data using parameters estimated on training set
+	all_test_x -= np.tile(np.atleast_2d(mx), (all_test_x.shape[0], 1))
+	all_test_x /= np.tile(np.atleast_2d(sx), (all_test_x.shape[0], 1))
+
+	runLLL_NN(all_train_x, all_train_y, all_test_x, all_test_y)
+
+def runNNExperiments ():
 	#COURSE_ID = "HarvardX/SW12.5x/2T2014"
 	COURSE_ID = "HarvardX/ER22.1x/1T2014"
 	if 'train_x' not in globals():
@@ -175,3 +215,7 @@ if __name__ == "__main__":
 
 	for numHidden in range(2, 20, 2):
 		runNN(train_x, train_y, test_x, test_y, numHidden)
+
+if __name__ == "__main__":
+	runLLLExperiments()
+	#runNNExperiments()
