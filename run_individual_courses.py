@@ -158,15 +158,10 @@ def initializeAllData (courseId):
 
 	return train_x, train_y, test_x, test_y, colNames
 
-def runLLL_NN (train_x, train_y, test_x, test_y, numHidden, courseIds):
-	def fixGradients (grads_and_vars):
-		#for gv in grads_and_vars:
-		#	if gv[1] == "W2":
-		#		gv[0] = tf.
-		pass
-
+def runLLL_NN (all_train_x, all_train_y, all_test_x, all_test_y, numHidden, courseIds):
 	with tf.Graph().as_default():
 		session = tf.InteractiveSession()
+
 		x = tf.placeholder("float", shape=[None, train_x.shape[1]])
 		y_ = tf.placeholder("float", shape=[None, train_y.shape[1]])
 
@@ -184,64 +179,60 @@ def runLLL_NN (train_x, train_y, test_x, test_y, numHidden, courseIds):
 		tf.add_to_collection('losses', cross_entropy)
 		total_loss = tf.add_n(tf.get_collection('losses'), name='total_loss')
 
-		train_step = tf.train.GradientDescentOptimizer(learning_rate=.001)
-		#train_step = tf.train.MomentumOptimizer(learning_rate=.001, momentum=0.1)
-		#train_step = tf.train.AdamOptimizer(learning_rate=.001)
+		train_step = tf.train.GradientDescentOptimizer(learning_rate=.001).minimize()
+		grads_and_vars = train_step.compute_gradients(total_loss)
+		op = train_step.apply_gradients(grads_and_vars)
 
 		session.run(tf.initialize_all_variables())
 		for i in range(NUM_EPOCHS):
 			offset = i*BATCH_SIZE % (train_x.shape[0] - BATCH_SIZE)
-			grads_and_vars = train_step.compute_gradients(total_loss)
 			fixGradients(grads_and_vars)
-			op = train_step.apply_gradients(grads_and_vars)
 			op.run({x: train_x[offset:offset+BATCH_SIZE, :], y_: train_y[offset:offset+BATCH_SIZE, :]})
 			if i % 100 == 0:
 				util.showProgressAll(cross_entropy, x, y, y_, test_x, test_y, courseIds)
 		session.close()
 
+def normalize (x, mx, sx):
+	return (x - np.tile(np.atleast_2d(mx), (x.shape[0], 1))) / np.tile(np.atleast_2d(sx), (x.shape[0], 1))
+
 # Life-long learning (LLL) experiment
 def runLLLExperiments ():
-	# Converts from a two-column binary label vector into a matrix with nCols
-	# and copies y into the matrix at the specified index.
-	def convertY (y, index, nCols):
-		convertedY = np.zeros((y.shape[0], nCols), dtype=y.dtype)
-		convertedY[:, index] = y[:, 1]  # index 1 of y corresponds to positive category
-		return convertedY
-
 	# Get list of all course_id's
 	#d = pandas.io.parsers.read_csv("train_individual.csv")
 	#courseIds = np.unique(d.course_id)
 	courseIds = [ "HarvardX/HUM2.5x/3T2014", "HarvardX/SW12.10x/1T2015" ]
 
 	# Initialize training and testing matrices
-	train_x, train_y, colNames = loadDataset("train_individual.csv", courseIds[0], computeT(courseIds[0]))
-	all_train_x = np.zeros((0, train_x.shape[1]), dtype=train_x.dtype)
-	all_train_y = np.zeros((0, len(courseIds)), dtype=train_y.dtype)
-	all_test_x = np.zeros((0, train_x.shape[1]), dtype=train_x.dtype)
-	all_test_y = np.zeros((0, len(courseIds)), dtype=train_y.dtype)
-	
+	all_train_x = {}
+	all_train_y = {}
+	all_test_x = {}
+	all_test_y = {}
+
 	# Collect training and testing data for all courses
 	print "Loading data for..."
+	allTrainX = 0
 	for i, courseId in enumerate(courseIds):
 		print courseId
 		T = computeT(courseId)
 		train_x, train_y, _ = loadDataset("train_individual.csv", courseId, T, list(colNames))
 		test_x, test_y, _ = loadDataset("test_individual.csv", courseId, T, list(colNames))
+		# Collect all training features so we can do mean/variance normalization
+		if allTrainX == 0:
+			allTrainX = train_x
+		allTrainX = np.vstack((allTrainX, train_x))
+		numTrainX += train_x.shape[0]
+		all_train_x{i} = train_x
+		all_train_y{i} = train_y
+		all_test_x{i} = test_x
+		all_test_y{i} = test_y
 
-		all_train_x = np.vstack((all_train_x, train_x))
-		all_train_y = np.vstack((all_train_y, convertY(train_y, i, len(courseIds))))
-		all_test_x = np.vstack((all_test_x, test_x))
-		all_test_y = np.vstack((all_test_y, convertY(test_y, i, len(courseIds))))
-
-	# Normalize data
-	mx = np.mean(all_train_x, axis=0)
-	sx = np.std(all_train_x, axis=0)
+	# Normalize all data
+	mx = np.mean(allTrainX, axis=0)
+	sx = np.std(allTrainX, axis=0)
 	sx[sx == 0] = 1
-	all_train_x -= np.tile(np.atleast_2d(mx), (all_train_x.shape[0], 1))
-	all_train_x /= np.tile(np.atleast_2d(sx), (all_train_x.shape[0], 1))
-	# Scale testing data using parameters estimated on training set
-	all_test_x -= np.tile(np.atleast_2d(mx), (all_test_x.shape[0], 1))
-	all_test_x /= np.tile(np.atleast_2d(sx), (all_test_x.shape[0], 1))
+	for i in range(len(all_train_x)):
+		all_train_x{i} = normalize(all_train_x{i}, mx, sx)
+		all_test_x{i} = normalize(all_test_x{i}, mx, sx)
 
 	for numHidden in range(2, 20, 2):
 		runLLL_NN(all_train_x, all_train_y, all_test_x, all_test_y, numHidden, courseIds)
