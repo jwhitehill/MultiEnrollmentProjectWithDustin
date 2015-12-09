@@ -5,13 +5,15 @@ import numpy as np
 import pandas
 import sklearn.metrics
 
-NUM_EPOCHS = 2000
-BATCH_SIZE = 100
+NUM_EPOCHS = 5000
+BATCH_SIZE = 250
 
-def makeVariable (shape, stddev, wd, name):
+def makeVariable (shape, stddev, wd, name, collectionNames = [""]):
 	var = tf.Variable(tf.truncated_normal(shape, stddev=stddev), name=name)
-	weight_decay = tf.mul(tf.nn.l2_loss(var), wd, name='weight_loss')
-	tf.add_to_collection('losses', weight_decay)
+	weight_decay = tf.mul(tf.nn.l2_loss(var), wd)
+	# Caller may wish to add to multiple collections
+	for collectionName in collectionNames:
+		tf.add_to_collection("losses{}".format(collectionName), weight_decay)
 	return var
 
 def runMLR (train_x, train_y, test_x, test_y, numEpochs = NUM_EPOCHS):
@@ -159,37 +161,48 @@ def initializeAllData (courseId):
 	return train_x, train_y, test_x, test_y, colNames
 
 def runLLL_NN (all_train_x, all_train_y, all_test_x, all_test_y, numHidden, courseIds):
+	n = len(courseIds)
 	with tf.Graph().as_default():
 		session = tf.InteractiveSession()
 
-		x = tf.placeholder("float", shape=[None, train_x.shape[1]])
-		y_ = tf.placeholder("float", shape=[None, train_y.shape[1]])
+		# Initialize all variables
+		xs = []
+		ys_ = []
+		collectionNames = ["losses_{}".format(i) for i in range(n) ]
+		for i in range(n):
+			xs.append(tf.placeholder("float", shape=[None, all_train_x[i].shape[1]]))
+			ys_.append(tf.placeholder("float", shape=[None, all_train_y[i].shape[1]]))
+		W1 = makeVariable([all_train_x[0].shape[1],numHidden], stddev=0.05, wd=1e1, name="W1", collectionNames=collectionNames)
+		b1 = makeVariable([numHidden], stddev=0.05, wd=1e1, name="b1", collectionNames=collectionNames)
+		W2s = []
+		level1s = []
+		level2s = []
+		ys = []
+		for i in range(n):
+			level1s.append(tf.matmul(xs[i],W1) + b1)
+			W2s.append(makeVariable([numHidden,all_train_y[i].shape[1]], stddev=0.05, wd=1e0, name="W2_{}".format(i), collectionNames=["losses_{}".format(i)]))
+			#level2s.append(tf.matmul(level1s[i],W2s[i]))
+			level2s.append(tf.matmul(tf.nn.relu(level1s[i]), W2s[i]))
+			ys.append(tf.nn.softmax(level2s[i]))
 
-		W1 = makeVariable([train_x.shape[1],numHidden], stddev=0.05, wd=1e1, name="W1")
-		b1 = makeVariable([numHidden], stddev=0.05, wd=1e1, name="b1")
-		W2 = makeVariable([numHidden,train_y.shape[1]], stddev=0.05, wd=1e0, name="W2")
-
-		level1 = tf.matmul(x,W1) + b1
-		level2 = tf.matmul(level1,W2)
-		level3 = tf.sigmoid(level2)
-		y = level3
-
-		cross_entropy = -tf.reduce_sum(y_*tf.log(tf.clip_by_value(y,1e-10,1.0)) +
-		                               (1-y_)*tf.log(tf.clip_by_value(1-y,1e-10,1.0)), name='cross_entropy')
-		tf.add_to_collection('losses', cross_entropy)
-		total_loss = tf.add_n(tf.get_collection('losses'), name='total_loss')
-
-		train_step = tf.train.GradientDescentOptimizer(learning_rate=.001).minimize()
-		grads_and_vars = train_step.compute_gradients(total_loss)
-		op = train_step.apply_gradients(grads_and_vars)
+		# Initialize loss functions
+		cross_entropies = []
+		total_losses = []
+		optimizers = []
+		for i in range(n):
+			cross_entropies.append(-tf.reduce_mean(ys_[i]*tf.log(tf.clip_by_value(ys[i],1e-10,1.0)), name="cross_entropy_{}".format(i)))
+			tf.add_to_collection("losses_{}".format(i), cross_entropies[i])
+			total_losses.append(tf.add_n(tf.get_collection("losses_{}".format(i)), name="total_losses_{}".format(i)))
+			optimizers.append(tf.train.AdamOptimizer(learning_rate=.001).minimize(total_losses[i]))
 
 		session.run(tf.initialize_all_variables())
 		for i in range(NUM_EPOCHS):
-			offset = i*BATCH_SIZE % (train_x.shape[0] - BATCH_SIZE)
-			fixGradients(grads_and_vars)
-			op.run({x: train_x[offset:offset+BATCH_SIZE, :], y_: train_y[offset:offset+BATCH_SIZE, :]})
-			if i % 100 == 0:
-				util.showProgressAll(cross_entropy, x, y, y_, test_x, test_y, courseIds)
+			for j in range(n):
+				offset = i*BATCH_SIZE % (all_train_x[j].shape[0] - BATCH_SIZE)
+				optimizers[j].run({xs[j]: all_train_x[j][offset:offset+BATCH_SIZE, :], ys_[j]: all_train_y[j][offset:offset+BATCH_SIZE, :]})
+				if i % 100 == 0:
+					util.showProgress(cross_entropies[j], xs[j], ys[j], ys_[j], all_test_x[j], all_test_y[j])
+					#util.showProgress(cross_entropies[j], xs[j], ys[j], ys_[j], all_train_x[j], all_train_y[j])
 		session.close()
 
 def normalize (x, mx, sx):
@@ -198,15 +211,20 @@ def normalize (x, mx, sx):
 # Life-long learning (LLL) experiment
 def runLLLExperiments ():
 	# Get list of all course_id's
-	#d = pandas.io.parsers.read_csv("train_individual.csv")
-	#courseIds = np.unique(d.course_id)
-	courseIds = [ "HarvardX/HUM2.5x/3T2014", "HarvardX/SW12.10x/1T2015" ]
+	d = pandas.io.parsers.read_csv("train_individual.csv")
+	courseIds = []
+	# Pick some courses
+	for courseId in np.unique(d.course_id):
+		if "2016" not in courseId:
+			courseIds.append(courseId)
+	courseIds = courseIds[0:10]
 
 	# Initialize training and testing matrices
-	all_train_x = {}
-	all_train_y = {}
-	all_test_x = {}
-	all_test_y = {}
+	all_train_x = []
+	all_train_y = []
+	all_test_x = []
+	all_test_y = []
+	_, _, colNames = loadDataset("train_individual.csv", courseIds[0], computeT(courseIds[0]))
 
 	# Collect training and testing data for all courses
 	print "Loading data for..."
@@ -217,24 +235,24 @@ def runLLLExperiments ():
 		train_x, train_y, _ = loadDataset("train_individual.csv", courseId, T, list(colNames))
 		test_x, test_y, _ = loadDataset("test_individual.csv", courseId, T, list(colNames))
 		# Collect all training features so we can do mean/variance normalization
-		if allTrainX == 0:
+		if type(allTrainX) == int:
 			allTrainX = train_x
 		allTrainX = np.vstack((allTrainX, train_x))
-		numTrainX += train_x.shape[0]
-		all_train_x{i} = train_x
-		all_train_y{i} = train_y
-		all_test_x{i} = test_x
-		all_test_y{i} = test_y
+		all_train_x.append(train_x)
+		all_train_y.append(train_y)
+		all_test_x.append(test_x)
+		all_test_y.append(test_y)
 
 	# Normalize all data
 	mx = np.mean(allTrainX, axis=0)
 	sx = np.std(allTrainX, axis=0)
 	sx[sx == 0] = 1
 	for i in range(len(all_train_x)):
-		all_train_x{i} = normalize(all_train_x{i}, mx, sx)
-		all_test_x{i} = normalize(all_test_x{i}, mx, sx)
+		all_train_x[i] = normalize(all_train_x[i], mx, sx)
+		all_test_x[i] = normalize(all_test_x[i], mx, sx)
 
 	for numHidden in range(2, 20, 2):
+		print "numHidden = {}".format(numHidden)
 		runLLL_NN(all_train_x, all_train_y, all_test_x, all_test_y, numHidden, courseIds)
 
 def runNNExperiments ():
