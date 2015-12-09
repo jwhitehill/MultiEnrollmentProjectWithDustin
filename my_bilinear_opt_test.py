@@ -1,14 +1,17 @@
 import tensorflow as tf
 import numpy as np
 
-H = 4
-M = 10
+H = 10
+M = 20
 N = 1000
 ALPHA = 1e1
 
-def makeVariable (shape, stddev, wd, name):
+def makeVariable (shape, stddev, wd, name, useL1Norm = False):
         var = tf.Variable(tf.truncated_normal(shape, stddev=stddev), name=name)
-        weight_decay = tf.mul(tf.nn.l2_loss(var), wd, name='weight_loss')
+	if useL1Norm:
+		weight_decay = tf.mul(tf.reduce_sum(tf.abs(var)), wd, name='weight_loss_l1')
+	else:
+		weight_decay = tf.mul(tf.nn.l2_loss(var), wd, name='weight_loss_l2')
         tf.add_to_collection('losses', weight_decay)
         return var
 
@@ -25,8 +28,8 @@ def optTF (X, y):
 		x = tf.placeholder("float", shape=[None, X.shape[1]])
 		y_ = tf.placeholder("float", shape=[None, 1])
 
-		L = makeVariable([X.shape[1], H], stddev=0.5, wd=ALPHA, name="L")
-		p = makeVariable([H, 1], stddev=0.5, wd=ALPHA, name="p")
+		L = makeVariable([X.shape[1], H], stddev=1, wd=ALPHA, name="L")
+		p = makeVariable([H, 1], stddev=1, wd=ALPHA*1e3, name="p", useL1Norm=True)
 
 		yhat = tf.matmul(tf.matmul(x, L), p)
 
@@ -34,10 +37,10 @@ def optTF (X, y):
 		tf.add_to_collection('losses', loss)
 		total_loss = tf.add_n(tf.get_collection('losses'), name='total_loss')
 
-		train_step = tf.train.GradientDescentOptimizer(learning_rate=.001).minimize(total_loss)
+		train_step = tf.train.GradientDescentOptimizer(learning_rate=.0001).minimize(total_loss)
 
 		session.run(tf.initialize_all_variables())
-		BATCH_SIZE = 200
+		BATCH_SIZE = 100
 		NUM_EPOCHS = 10000
 		for i in range(NUM_EPOCHS):
 			offset = i*BATCH_SIZE % (X.shape[0] - BATCH_SIZE)
