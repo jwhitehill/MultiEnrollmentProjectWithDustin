@@ -6,10 +6,34 @@ import pandas
 import sklearn.metrics
 
 NUM_EPOCHS = 5000
-BATCH_SIZE = 250
+BATCH_SIZE = 100
+
+def mySolveLS (A, b):
+	return np.linalg.solve(A.T.dot(A) + np.eye(A.shape[1])*ALPHA, A.T.dot(b))
+
+def optBilinearLS (X, y, numHidden):
+	yhat = np.zeros_like(y)
+	lastRMSE = float('inf')
+	TOLERANCE = 1e-3
+	L = np.random.random((X.shape[1], numHidden))
+	p = np.random.random(numHidden)
+	RMSE = calcRMSE(y, yhat)
+	while np.abs(lastRMSE - RMSE) > TOLERANCE:
+		# Step 1
+		p = mySolveLS(X.dot(L), y)
+
+		# Step 2
+		Lvec = mySolveLS(np.kron(p, X), y)
+		L = Lvec.reshape((L.shape[1], L.shape[0])).T
+
+		yhat = X.dot(L).dot(p)
+		lastRMSE = RMSE
+		RMSE = calcRMSE(y, yhat)
+		print RMSE
+	return L, p
 
 def makeVariable (shape, stddev, wd, name, collectionNames = [""]):
-	var = tf.Variable(tf.truncated_normal(shape, stddev=stddev), name=name)
+	var = tf.Variable(tf.random_normal(shape, stddev=stddev), name=name)
 	weight_decay = tf.mul(tf.nn.l2_loss(var), wd)
 	# Caller may wish to add to multiple collections
 	for collectionName in collectionNames:
@@ -39,7 +63,7 @@ def runMLR (train_x, train_y, test_x, test_y, numEpochs = NUM_EPOCHS):
 		for i in range(numEpochs):
 			offset = i*BATCH_SIZE % (train_x.shape[0] - BATCH_SIZE)
 			train_step.run({x: train_x[offset:offset+BATCH_SIZE, :], y_: train_y[offset:offset+BATCH_SIZE, :]})
-			if i % 100 == 0:
+			if i % 500 == 0:
 				util.showProgress(cross_entropy, x, y, y_, test_x, test_y)
 		session.close()
 
@@ -50,19 +74,15 @@ def runNN (train_x, train_y, test_x, test_y, numHidden, numEpochs = NUM_EPOCHS):
 
 		x = tf.placeholder("float", shape=[None, train_x.shape[1]])
 		y_ = tf.placeholder("float", shape=[None, train_y.shape[1]])
-		keep_prob = tf.placeholder("float")
 
-		W1 = makeVariable([train_x.shape[1],numHidden], stddev=0.05, wd=1e1)
-		b1 = makeVariable([numHidden], stddev=0.05, wd=1e1)
-		W2 = makeVariable([numHidden,train_y.shape[1]], stddev=0.05, wd=1e0)
-		b2 = makeVariable([train_y.shape[1]], stddev=0.05, wd=1e0)
+		W1 = makeVariable([train_x.shape[1],numHidden], stddev=0.5, wd=1e1, name="W1")
+		b1 = makeVariable([numHidden], stddev=0.5, wd=1e1, name="b1")
+		W2 = makeVariable([numHidden,train_y.shape[1]], stddev=0.5, wd=1e0, name="W2")
 
 		level1 = tf.nn.relu(tf.matmul(x,W1) + b1)
-		level2 = tf.nn.dropout(level1, keep_prob)
-		level3 = tf.nn.softmax(tf.matmul(level2,W2) + b2)
-		y = level3
+		y = tf.nn.softmax(tf.matmul(level1,W2))
 
-		cross_entropy = -tf.reduce_sum(y_*tf.log(tf.clip_by_value(y,1e-10,1.0)), name='cross_entropy')
+		cross_entropy = -tf.reduce_mean(y_*tf.log(tf.clip_by_value(y,1e-10,1.0)), name='cross_entropy')
 		tf.add_to_collection('losses', cross_entropy)
 		total_loss = tf.add_n(tf.get_collection('losses'), name='total_loss')
 
@@ -72,9 +92,9 @@ def runNN (train_x, train_y, test_x, test_y, numHidden, numEpochs = NUM_EPOCHS):
 		session.run(tf.initialize_all_variables())
 		for i in range(numEpochs):
 			offset = i*BATCH_SIZE % (train_x.shape[0] - BATCH_SIZE)
-			train_step.run({x: train_x[offset:offset+BATCH_SIZE, :], y_: train_y[offset:offset+BATCH_SIZE, :], keep_prob: 0.1})
-			if i % 100 == 0:
-				util.showProgress(cross_entropy, x, y, y_, test_x, test_y, keep_prob)
+			train_step.run({x: train_x[offset:offset+BATCH_SIZE, :], y_: train_y[offset:offset+BATCH_SIZE, :]})
+			if i % 500 == 0:
+				util.showProgress(cross_entropy, x, y, y_, test_x, test_y)
 		session.close()
 
 def loadDataset (filename, courseId, T, requiredCols = None):
@@ -172,17 +192,17 @@ def runLLL_NN (all_train_x, all_train_y, all_test_x, all_test_y, numHidden, cour
 		for i in range(n):
 			xs.append(tf.placeholder("float", shape=[None, all_train_x[i].shape[1]]))
 			ys_.append(tf.placeholder("float", shape=[None, all_train_y[i].shape[1]]))
-		W1 = makeVariable([all_train_x[0].shape[1],numHidden], stddev=0.05, wd=1e1, name="W1", collectionNames=collectionNames)
-		b1 = makeVariable([numHidden], stddev=0.05, wd=1e1, name="b1", collectionNames=collectionNames)
+		W1 = makeVariable([all_train_x[0].shape[1],numHidden], stddev=0.5, wd=1e1, name="W1", collectionNames=collectionNames)
+		b1 = makeVariable([numHidden], stddev=0.5, wd=1e1, name="b1", collectionNames=collectionNames)
 		W2s = []
 		level1s = []
 		level2s = []
 		ys = []
 		for i in range(n):
 			level1s.append(tf.matmul(xs[i],W1) + b1)
-			W2s.append(makeVariable([numHidden,all_train_y[i].shape[1]], stddev=0.05, wd=1e0, name="W2_{}".format(i), collectionNames=["losses_{}".format(i)]))
-			#level2s.append(tf.matmul(level1s[i],W2s[i]))
-			level2s.append(tf.matmul(tf.nn.relu(level1s[i]), W2s[i]))
+			W2s.append(makeVariable([numHidden,all_train_y[i].shape[1]], stddev=0.5, wd=1e3, name="W2_{}".format(i), collectionNames=["losses_{}".format(i)]))
+			level2s.append(tf.matmul(level1s[i],W2s[i]))
+			#level2s.append(tf.matmul(tf.nn.relu(level1s[i]), W2s[i]))
 			ys.append(tf.nn.softmax(level2s[i]))
 
 		# Initialize loss functions
@@ -193,67 +213,82 @@ def runLLL_NN (all_train_x, all_train_y, all_test_x, all_test_y, numHidden, cour
 			cross_entropies.append(-tf.reduce_mean(ys_[i]*tf.log(tf.clip_by_value(ys[i],1e-10,1.0)), name="cross_entropy_{}".format(i)))
 			tf.add_to_collection("losses_{}".format(i), cross_entropies[i])
 			total_losses.append(tf.add_n(tf.get_collection("losses_{}".format(i)), name="total_losses_{}".format(i)))
-			optimizers.append(tf.train.AdamOptimizer(learning_rate=.001).minimize(total_losses[i]))
+			optimizers.append(tf.train.AdamOptimizer(learning_rate=.001, beta1=.9, beta2=.9).minimize(total_losses[i]))
+			#optimizers.append(tf.train.MomentumOptimizer(learning_rate=.001, momentum=0.1).minimize(total_losses[i]))
 
 		session.run(tf.initialize_all_variables())
 		for i in range(NUM_EPOCHS):
+			if i % 500 == 0:
+				print "..."
 			for j in range(n):
 				offset = i*BATCH_SIZE % (all_train_x[j].shape[0] - BATCH_SIZE)
 				optimizers[j].run({xs[j]: all_train_x[j][offset:offset+BATCH_SIZE, :], ys_[j]: all_train_y[j][offset:offset+BATCH_SIZE, :]})
-				if i % 100 == 0:
-					util.showProgress(cross_entropies[j], xs[j], ys[j], ys_[j], all_test_x[j], all_test_y[j])
+				if i % 500 == 0:
+					util.showProgress(total_losses[j], xs[j], ys[j], ys_[j], all_test_x[j], all_test_y[j])
 					#util.showProgress(cross_entropies[j], xs[j], ys[j], ys_[j], all_train_x[j], all_train_y[j])
 		session.close()
 
 def normalize (x, mx, sx):
 	return (x - np.tile(np.atleast_2d(mx), (x.shape[0], 1))) / np.tile(np.atleast_2d(sx), (x.shape[0], 1))
 
+def loadLLLData ():
+	if 'all_train_x' not in globals():
+		# Get list of all course_id's
+		d = pandas.io.parsers.read_csv("train_individual.csv")
+		global courseIds
+		courseIds = []
+		# Pick some courses
+		for courseId in np.unique(d.course_id):
+			if "2016" not in courseId:
+				courseIds.append(courseId)
+		courseIds = courseIds[0:10]
+
+		# Initialize training and testing matrices
+		global all_train_x, all_train_y, all_test_x, all_test_y
+		all_train_x = []
+		all_train_y = []
+		all_test_x = []
+		all_test_y = []
+		_, _, colNames = loadDataset("train_individual.csv", courseIds[0], computeT(courseIds[0]))
+
+		# Collect training and testing data for all courses
+		print "Loading data for..."
+		allTrainX = 0
+		for i, courseId in enumerate(courseIds):
+			print courseId
+			T = computeT(courseId)
+			train_x, train_y, _ = loadDataset("train_individual.csv", courseId, T, list(colNames))
+			test_x, test_y, _ = loadDataset("test_individual.csv", courseId, T, list(colNames))
+			# Collect all training features so we can do mean/variance normalization
+			if type(allTrainX) == int:
+				allTrainX = train_x
+			allTrainX = np.vstack((allTrainX, train_x))
+			all_train_x.append(train_x)
+			all_train_y.append(train_y)
+			all_test_x.append(test_x)
+			all_test_y.append(test_y)
+
+		# Normalize all data
+		mx = np.mean(allTrainX, axis=0)
+		sx = np.std(allTrainX, axis=0)
+		sx[sx == 0] = 1
+		for i in range(len(all_train_x)):
+			all_train_x[i] = normalize(all_train_x[i], mx, sx)
+			all_test_x[i] = normalize(all_test_x[i], mx, sx)
+		
+	return all_train_x, all_train_y, all_test_x, all_test_y, courseIds
+
 # Life-long learning (LLL) experiment
 def runLLLExperiments ():
-	# Get list of all course_id's
-	d = pandas.io.parsers.read_csv("train_individual.csv")
-	courseIds = []
-	# Pick some courses
-	for courseId in np.unique(d.course_id):
-		if "2016" not in courseId:
-			courseIds.append(courseId)
-	courseIds = courseIds[0:10]
+	all_train_x, all_train_y, all_test_x, all_test_y, courseIds = loadLLLData()
 
-	# Initialize training and testing matrices
-	all_train_x = []
-	all_train_y = []
-	all_test_x = []
-	all_test_y = []
-	_, _, colNames = loadDataset("train_individual.csv", courseIds[0], computeT(courseIds[0]))
-
-	# Collect training and testing data for all courses
-	print "Loading data for..."
-	allTrainX = 0
-	for i, courseId in enumerate(courseIds):
-		print courseId
-		T = computeT(courseId)
-		train_x, train_y, _ = loadDataset("train_individual.csv", courseId, T, list(colNames))
-		test_x, test_y, _ = loadDataset("test_individual.csv", courseId, T, list(colNames))
-		# Collect all training features so we can do mean/variance normalization
-		if type(allTrainX) == int:
-			allTrainX = train_x
-		allTrainX = np.vstack((allTrainX, train_x))
-		all_train_x.append(train_x)
-		all_train_y.append(train_y)
-		all_test_x.append(test_x)
-		all_test_y.append(test_y)
-
-	# Normalize all data
-	mx = np.mean(allTrainX, axis=0)
-	sx = np.std(allTrainX, axis=0)
-	sx[sx == 0] = 1
-	for i in range(len(all_train_x)):
-		all_train_x[i] = normalize(all_train_x[i], mx, sx)
-		all_test_x[i] = normalize(all_test_x[i], mx, sx)
-
-	for numHidden in range(2, 20, 2):
+	for numHidden in range(3, 6):
 		print "numHidden = {}".format(numHidden)
+		print "LLL:"
 		runLLL_NN(all_train_x, all_train_y, all_test_x, all_test_y, numHidden, courseIds)
+		#print "Regular NN:"
+		#for j in range(len(courseIds)):
+		#	runNN(all_train_x[j], all_train_y[j], all_test_x[j], all_test_y[j], numHidden)
 
 def runNNExperiments ():
 	#COURSE_ID = "HarvardX/SW12.5x/2T2014"
