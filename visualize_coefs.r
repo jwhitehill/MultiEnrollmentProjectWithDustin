@@ -4,7 +4,7 @@ if (! exists("d")) {
 	d <- loadData("all.csv");
 }
 
-disciplines <- c("HealthSciences", "Humanities", "STEM", "SocialSciences", "All")
+disciplines <- c("All", "HealthSciences", "Humanities", "STEM", "SocialSciences")
 allModels <- vector(mode="list", length=5)
 comparisons <- c("0_v_MoreThan0", "1_v_MoreThan1")
 for (j in 1:length(disciplines)) {
@@ -31,19 +31,28 @@ for (j in 1:length(disciplines)) {
 plotreg(allModels[[1]][[2]], custom.model.names=comparisons[2], mfrow=FALSE)
 
 # Histograms
-numCourses = c(0:10)
+numCourses = c(1:10)
 colors = c(rgb(1,0,0,1/4), rgb(0,1,0,1/4), rgb(0,0,1,1/4), rgb(0.5,0.5,0,1/4), rgb(0.5,0,0.5,1/4))
+allHists <- vector(mode="list", length=5)
+allTitles <- vector(mode="list", length=5)
 for (j in 1:length(disciplines)) {
   discipline <- disciplines[j]
   fieldName <- paste("numCourses", discipline, sep="")
+  allTitles[[j]] <- paste("Number of courses (", discipline, ")", sep="")
   
-  if (j != 5) {  # 5="All"; restrict to students who took >0 courses in this discipline
+  if (j != 1) {  # 1="All"; restrict to students who took >0 courses in this discipline
     d$take0OrMore <- c(d[fieldName] > 0)
     # Subselect those people who take >0 courses in the specified discipline
     e <- d[d$take0OrMore,]
   } else {
     e <- d
   }
-  hist(e[e[fieldName] < max(numCourses),fieldName], breaks=numCourses, col=colors[[j]], add=j>1, xlab="Number of courses", ylim=c(0,1000000), main="Histogram of number of courses")
+  allHists[[j]] <- hist(e[e[fieldName] < max(numCourses),fieldName], right=FALSE, breaks=numCourses, plot=FALSE)
 }
-legend("topright", disciplines, fill=colors)
+par(mfrow=c(1,2))
+plot(allHists[[j]], col=colors[[j]], xaxt="n")
+axis(1, at=numCourses+0.5, labels=numCourses)
+mytable <- table(e[e[fieldName] < max(numCourses),fieldName])
+mytable <- mytable[1:4]
+labs <- paste(names(mytable), " (",signif(100*mytable/sum(mytable), digits=2),"%)", sep="")
+pie(mytable, labels=labs, cex=0.6, radius=1.0, main="% of students\ntaking multiple courses")
