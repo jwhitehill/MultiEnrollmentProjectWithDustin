@@ -116,7 +116,7 @@ def getXandY (pc, pcd, usernames, T0, Tc):
 	goodIdxs = []
 	for i, username in enumerate(usernames):
 		idxs = usernamesToPcdIdxsMap[username]
-		# For each for in the person-course-day dataset for this user, put the
+		# For each row in the person-course-day dataset for this user, put the
 		# features into the correct column range for that user in the design matrix X.
 		for idx in idxs:
 			dateIdx = int((np.datetime64(pcdDates.iloc[idx]) - T0) / np.timedelta64(1, 'D'))
