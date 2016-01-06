@@ -1,4 +1,5 @@
 import pandas
+import math
 import numpy as np
 import sklearn.metrics
 import sklearn.linear_model
@@ -15,18 +16,40 @@ START_DATES = {
 	'HarvardX/SW12.8x/3T2014': np.datetime64('2014-10-09'),
 	'HarvardX/SW12.9x/3T2014': np.datetime64('2014-11-20'),
 	'HarvardX/SW12.10x/1T2015': np.datetime64('2015-01-08'),
-	'HarvardX/SW12.1x/2015': np.datetime64('2015-10-27'),
-	'HarvardX/SW12.2x/2015': np.datetime64('2015-10-27'),
-	'HarvardX/SW12.3x/2015': np.datetime64('2015-10-27'),
-	'HarvardX/SW12.4x/2015': np.datetime64('2015-10-27'),
-	'HarvardX/SW12.5x/2015': np.datetime64('2015-10-27'),
-	'HarvardX/SW12.6x/2015': np.datetime64('2015-11-20'),
-	'HarvardX/SW12.7x/2015': np.datetime64('2015-11-20'),
-	'HarvardX/SW12.8x/2015': np.datetime64('2015-11-20'),
-	'HarvardX/SW12.9x/2015': np.datetime64('2015-11-20'),
-	'HarvardX/SW12.10x/2015': np.datetime64('2015-11-20'),
+	#'HarvardX/SW12.1x/2015': np.datetime64('2015-10-27'),
+	#'HarvardX/SW12.2x/2015': np.datetime64('2015-10-27'),
+	#'HarvardX/SW12.3x/2015': np.datetime64('2015-10-27'),
+	#'HarvardX/SW12.4x/2015': np.datetime64('2015-10-27'),
+	#'HarvardX/SW12.5x/2015': np.datetime64('2015-10-27'),
+	#'HarvardX/SW12.6x/2015': np.datetime64('2015-11-20'),
+	#'HarvardX/SW12.7x/2015': np.datetime64('2015-11-20'),
+	#'HarvardX/SW12.8x/2015': np.datetime64('2015-11-20'),
+	#'HarvardX/SW12.9x/2015': np.datetime64('2015-11-20'),
+	#'HarvardX/SW12.10x/2015': np.datetime64('2015-11-20'),
 }
 
+PREDICTION_DATES = {
+	'HarvardX/SW12x/2013_SOND': np.datetime64('2013-11-14 17:00:00'),
+	'HarvardX/SW12.2x/1T2014': np.datetime64('2014-01-08 05:00:00'),
+	'HarvardX/SW12.3x/1T2014': np.datetime64('2014-02-20 22:00:00'),
+	'HarvardX/SW12.4x/1T2014': np.datetime64('2014-03-27 22:00:00'),
+	'HarvardX/SW12.5x/2T2014': np.datetime64('2014-04-24 22:00:00'),
+	'HarvardX/SW12.6x/2T2014': np.datetime64('2014-06-05 22:30:00'),
+	'HarvardX/SW12.7x/3T2014': np.datetime64('2014-09-11 19:00:00'),
+	'HarvardX/SW12.8x/3T2014': np.datetime64('2014-10-24 04:00:00'),
+	'HarvardX/SW12.9x/3T2014': np.datetime64('2014-12-05 05:00:00'),
+	'HarvardX/SW12.10x/1T2015': np.datetime64('2015-01-29 20:00:00'),
+	#'HarvardX/SW12.1x/2015': np.datetime64('2015-10-27 14:00:00'),
+	#'HarvardX/SW12.2x/2015': np.datetime64('2015-10-27 14:00:00'),
+	#'HarvardX/SW12.3x/2015': np.datetime64('2015-10-27 14:00:00'),
+	#'HarvardX/SW12.4x/2015': np.datetime64('2015-10-27 14:00:00'),
+	#'HarvardX/SW12.5x/2015': np.datetime64('2015-10-27 14:00:00'),
+	#'HarvardX/SW12.6x/2015': np.datetime64('2015-11-20'),
+	#'HarvardX/SW12.7x/2015': np.datetime64('2015-11-20'),
+	#'HarvardX/SW12.8x/2015': np.datetime64('2015-11-20'),
+	#'HarvardX/SW12.9x/2015': np.datetime64('2030-01-01'),
+	#'HarvardX/SW12.10x/2015': np.datetime64('2015-11-20')
+}
 # For each course:
 #		Get demographic information from person-course dataset
 #		Get list of rows from person-course-day dataset
@@ -68,7 +91,8 @@ def convertTimes (d, colName):
 		
 def computeCourseDates (courseId):
 	T0 = START_DATES[courseId]
-	Tc = T0 + np.timedelta64(7, 'D')
+	Tc = PREDICTION_DATES[courseId]
+	#Tc = T0 + np.timedelta64(7, 'D')
 	return T0, Tc
 
 # Get users whose start_date is before Tc and who participated in course
@@ -106,10 +130,10 @@ def getXandY (pc, pcd, usernames, T0, Tc):
 	pcd = pcd.drop([ 'username', 'course_id', 'date', 'last_event' ], axis=1)
 
 	# DEBUG -- Only test specific features
-	pcd = pcd[['nevents']]
+	#pcd = pcd[['nevents']]
 	# END DEBUG
 
-	NUM_DAYS = int((Tc - T0) / np.timedelta64(1, 'D'))
+	NUM_DAYS = int(math.ceil((Tc - T0) / np.timedelta64(1, 'D')))
 	NUM_FEATURES = NUM_DAYS * len(pcd.columns) + len(pc.columns)
 	X = np.zeros((len(usernames), NUM_FEATURES))
 	y = np.zeros(len(usernames))
@@ -124,7 +148,7 @@ def getXandY (pc, pcd, usernames, T0, Tc):
 			X[i,startColIdx:startColIdx+len(pcd.columns)] = pcd.iloc[idx]
 		# Now append the demographic features
 		demographics = pc.iloc[usernamesToPcIdxsMap[username]]
-		#X[i,NUM_DAYS * len(pcd.columns):] = demographics
+		X[i,NUM_DAYS * len(pcd.columns):] = demographics
 		y[i] = usernamesToCertifiedMap[username]
 		if np.isfinite(np.sum(X[i,:])):
 			goodIdxs.append(i)
@@ -152,7 +176,7 @@ if __name__ == "__main__":
 	if 'pcd' not in globals():
 		pcd = loadPersonCourseDayData()
 		pc = loadPersonCourseData()
-	for courseId in pcd.keys():  # For each course
+	for courseId in set(pcd.keys()).intersection(START_DATES.keys()):  # For each course
 		print courseId
 		# Restrict analysis to rows of PC dataset relevant to this course
 		idxs = np.nonzero(pc.course_id == courseId)[0]
