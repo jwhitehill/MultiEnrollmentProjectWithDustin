@@ -1,7 +1,7 @@
 ---
 title: "Predicting Multienrollment"
-author: "Jacob Whitehill"
-date: "January 4, 2016"
+author: "Jacob Whitehill and Dustin Tingley"
+date: "January 6, 2016"
 output: pdf_document
 ---
 
@@ -10,13 +10,12 @@ knitr::opts_chunk$set(echo = TRUE)
 library(texreg)
 source("utility.r")
 
-plotHistWithPiechart <- function (histData, color, numCourses, fieldName, title, e) {
-  par(mfrow=c(1,2))
+plotHistWithPiechart <- function (histData, color, numCourses, title, e) {
+  par(mfrow=c(1,2), pin=c(2,2))
   plot(histData, col=color, xaxt="n", main=title, xlab="# of courses")
   axis(1, at=numCourses+0.5, labels=numCourses)
-  f <- e[e[fieldName] < max(numCourses),fieldName]
-  f[f > 4] <- 4  # Cap at 4
-  mytable <- table(f)
+  e[e > 4] <- 4  # Cap at 4
+  mytable <- table(e)
   mynames <- c("1", "2", "3", "4+")
   labs <- paste(mynames, " (",signif(100*mytable/sum(mytable), digits=2),"%)", sep="")
   pie(mytable, labels=labs, cex=0.6, radius=1.0, main="% of students\ntaking multiple courses")
@@ -54,6 +53,7 @@ numCourses = c(1:10)
 colors = c(rgb(1,0,0,1/4), rgb(0,1,0,1/4), rgb(0,0,1,1/4), rgb(0.5,0.5,0,1/4), rgb(0.5,0,0.5,1/4))
 allHists <- vector(mode="list", length=5)
 allTitles <- vector(mode="list", length=5)
+allNumCourses <- vector(mode="list", length=5) 
 for (j in 1:length(disciplines)) {
   discipline <- disciplines[j]
   fieldName <- paste("numCourses", discipline, sep="")
@@ -66,6 +66,7 @@ for (j in 1:length(disciplines)) {
   } else {
     e <- d
   }
+  allNumCourses[[j]] <- e[,fieldName]
   allHists[[j]] <- hist(e[e[fieldName] < max(numCourses),fieldName], right=FALSE, breaks=numCourses, plot=FALSE)
 }
 ```
@@ -75,7 +76,7 @@ Introduction
 The goal of this project was to assess whether statistically significant patterns can be identified of which kinds of learners -- in terms of easily queryable attributes such as age, gender, continent-of-origin, and level of education -- tend to participate in multiple courses, possibly within different disciplines (humanities, STEM, etc.). In particular, we computed histograms of the numbers of courses in which learners participate, organized by discipline. We also fit logistic regression models  to determine which kinds of learners tended to enroll in more than 1 course in each discipline.
 
 ## Methods
-We organized courses into 4 different disciplines -- Health Sciences, Humanities, STEM, and Social Sciences -- as well as a "catch-all" discipline containing all courses. We were interested in which kinds of learners *participated*, rather than just *registered*, in different courses. (Recall from the HarvardX Year 2 report that *participation* requires clicking into the MOOC courseware at least once after registering for each course.) Hence, we analyzed only and all the (person *x* course) data (extracted from the person-course dataset from November 11, 2015) for participation events.
+We organized courses into 4 different disciplines -- Health Sciences, Humanities, STEM, and Social Sciences -- as well as a "catch-all" discipline containing all courses. We were interested in which kinds of learners *participated*, rather than just *registered*, in different courses. (Recall from the HarvardX Year 2 report that *participation* requires clicking into the MOOC courseware at least once after registering for each course.) Hence, we analyzed only and all the (person x course) data (extracted from the person-course dataset from November 11, 2015) for participation events.
 
 For each discipline, we fit two logistic regression models: (a) one model to predict whether a student will take *at least 1 course* in the discipline; and (b) one model to predict whether a student will take *more than 1 course* in the discipline. For both models, we used the following covariates: the student's continent-of-origin, age (broken down into 5-year intervals from 10-60), level of education, and gender.
 
@@ -91,28 +92,28 @@ For the catch-all "all" discipline, since all students in our dataset participat
 Histograms of course enrollment
 ===============================
 ## All
-```{r allHist, echo=FALSE}
-plotHistWithPiechart(allHists[[1]], colors[[1]], numCourses, fieldName, allTitles[[1]], e)
+```{r allHist, echo=FALSE, fig.height=3.25}
+plotHistWithPiechart(allHists[[1]], colors[[1]], numCourses, allTitles[[1]], allNumCourses[[1]])
 ```
 
 ## Health Sciences
-```{r healthsciencesHist, echo=FALSE}
-plotHistWithPiechart(allHists[[2]], colors[[2]], numCourses, fieldName, allTitles[[2]], e)
+```{r healthsciencesHist, echo=FALSE, fig.height=3.25}
+plotHistWithPiechart(allHists[[2]], colors[[2]], numCourses, allTitles[[2]], allNumCourses[[2]])
 ```
 
 ## Humanities
-```{r humanitiesHist, echo=FALSE}
-plotHistWithPiechart(allHists[[3]], colors[[3]], numCourses, fieldName, allTitles[[3]], e)
+```{r humanitiesHist, echo=FALSE, fig.height=3.25}
+plotHistWithPiechart(allHists[[3]], colors[[3]], numCourses, allTitles[[3]], allNumCourses[[3]])
 ```
 
 ## STEM
-```{r stemHist, echo=FALSE}
-plotHistWithPiechart(allHists[[4]], colors[[4]], numCourses, fieldName, allTitles[[4]], e)
+```{r stemHist, echo=FALSE, fig.height=3.25}
+plotHistWithPiechart(allHists[[4]], colors[[4]], numCourses, allTitles[[4]], allNumCourses[[4]])
 ```
 
 ## Social Sciences
-```{r socialsciencesHist, echo=FALSE}
-plotHistWithPiechart(allHists[[5]], colors[[5]], numCourses, fieldName, allTitles[[5]], e)
+```{r socialsciencesHist, echo=FALSE, fig.height=3.25}
+plotHistWithPiechart(allHists[[5]], colors[[5]], numCourses, allTitles[[5]], allNumCourses[[5]])
 ```
 
 Logistic regression models
@@ -124,26 +125,26 @@ in the graph for "All" predicting whether learners take more than 1 MOOC, the po
 participating in more than one course.
 
 ## All
-```{r allProbModel, echo=FALSE}
-plotreg(allModels[[1]][[2]], custom.model.names=comparisons[2], mfrow=FALSE)
+```{r allProbModel, echo=FALSE, message=FALSE, fig.height=6, out.height="3in"}
+plotreg(allModels[[1]][[2]], custom.model.names=paste(disciplines[[1]], comparisons[2], sep=": "), mfrow=FALSE)
 ```
 
 ## Health Sciences
-```{r healthsciencesProbModel, echo=FALSE}
-plotreg(allModels[[2]], custom.model.names=comparisons, mfrow=FALSE)
+```{r healthsciencesProbModel, echo=FALSE, message=FALSE, fig.height=12, out.height="6in"}
+plotreg(allModels[[2]], custom.model.names=paste(disciplines[[2]], comparisons, sep=": "), mfrow=FALSE)
 ```
 
 ## Humanities
-```{r humanitiesProbModel, echo=FALSE}
-plotreg(allModels[[3]], custom.model.names=comparisons, mfrow=FALSE)
+```{r humanitiesProbModel, echo=FALSE, message=FALSE, fig.height=12, out.height="6in"}
+plotreg(allModels[[3]], custom.model.names=paste(disciplines[[3]], comparisons, sep=": "), mfrow=FALSE)
 ```
 
 ## STEM
-```{r stemProbModel, echo=FALSE}
-plotreg(allModels[[4]], custom.model.names=comparisons, mfrow=FALSE)
+```{r stemProbModel, echo=FALSE, message=FALSE, fig.height=12, out.height="6in"}
+plotreg(allModels[[4]], custom.model.names=paste(disciplines[[4]], comparisons, sep=": "), mfrow=FALSE)
 ```
 
 ## Social Sciences
-```{r socialsciencesProbModel, echo=FALSE}
-plotreg(allModels[[5]], custom.model.names=comparisons, mfrow=FALSE)
+```{r socialsciencesProbModel, echo=FALSE, message=FALSE, fig.height=12, out.height="6in"}
+plotreg(allModels[[5]], custom.model.names=paste(disciplines[[5]], comparisons, sep=": "), mfrow=FALSE)
 ```
