@@ -100,7 +100,7 @@ def getRelevantUsers (pc, Tc):
 	idxs = np.nonzero((pc.start_time < Tc) & (pc.viewed == 1))[0]
 	return pc.username.iloc[idxs]
 
-def getXandY (pc, pcd, usernames, T0, Tc):
+def getXandY (pc, pcd, usernames, T0, Tc, collapseOverTime = False):
 	# Restrict analysis to days between T0 and Tc
 	idxs = np.nonzero((pcd.date >= T0) & (pcd.date < Tc))[0]
 	pcd = pcd.iloc[idxs]
@@ -130,29 +130,39 @@ def getXandY (pc, pcd, usernames, T0, Tc):
 	pcd = pcd.drop([ 'username', 'course_id', 'date', 'last_event' ], axis=1)
 
 	# DEBUG -- Only test specific features
-	#pcd = pcd[['nevents']]
+	#pcd = pcd[['nevents', 'sum_dt']]
+	#pcd = pcd[['sum_dt']]
 	# END DEBUG
 
-	NUM_DAYS = int(math.ceil((Tc - T0) / np.timedelta64(1, 'D')))
+	if collapseOverTime:
+		NUM_DAYS = 1
+	else:
+		NUM_DAYS = int(math.ceil((Tc - T0) / np.timedelta64(1, 'D')))
 	NUM_FEATURES = NUM_DAYS * len(pcd.columns) + len(pc.columns)
 	X = np.zeros((len(usernames), NUM_FEATURES))
 	y = np.zeros(len(usernames))
+	sumDts = np.zeros((len(usernames), NUM_DAYS))  # Keep track of sum_dt as a special feature
 	goodIdxs = []
 	for i, username in enumerate(usernames):
 		idxs = usernamesToPcdIdxsMap[username]
 		# For each row in the person-course-day dataset for this user, put the
 		# features into the correct column range for that user in the design matrix X.
-		for idx in idxs:
-			dateIdx = int((np.datetime64(pcdDates.iloc[idx]) - T0) / np.timedelta64(1, 'D'))
-			startColIdx = len(pcd.columns) * dateIdx
-			X[i,startColIdx:startColIdx+len(pcd.columns)] = pcd.iloc[idx]
+		if collapseOverTime:
+			X[i,0:len(pcd.columns)] = np.sum(pcd.iloc[idxs].as_matrix(), axis=0)  # Call as_matrix() so nan is treated as nan in sum!
+			sumDts[i] = np.sum(pcd.sum_dt.iloc[idxs])
+		else:
+			for idx in idxs:
+				dateIdx = int((np.datetime64(pcdDates.iloc[idx]) - T0) / np.timedelta64(1, 'D'))
+				startColIdx = len(pcd.columns) * dateIdx
+				sumDts[i,dateIdx] = pcd.sum_dt.iloc[idx]
+				X[i,startColIdx:startColIdx+len(pcd.columns)] = pcd.iloc[idx]
 		# Now append the demographic features
 		demographics = pc.iloc[usernamesToPcIdxsMap[username]]
 		X[i,NUM_DAYS * len(pcd.columns):] = demographics
 		y[i] = usernamesToCertifiedMap[username]
 		if np.isfinite(np.sum(X[i,:])):
 			goodIdxs.append(i)
-	return X[goodIdxs,:], y[goodIdxs]
+	return X[goodIdxs,:], y[goodIdxs], np.sum(sumDts[goodIdxs,:], axis=1)
 
 def normalize (trainX, testX):
 	mx = np.mean(trainX, axis=0)
@@ -165,12 +175,73 @@ def normalize (trainX, testX):
 	testX /= np.tile(np.atleast_2d(sx), (testX.shape[0], 1))
 	return trainX, testX
 
-def split (X, y):
-	idxs = np.random.permutation(X.shape[0])
-	numTraining = int(len(idxs) * 0.8)
-	trainIdxs = idxs[0:numTraining]
-	testIdxs = idxs[numTraining:]
-	return X[trainIdxs,:], y[trainIdxs], X[testIdxs,:], y[testIdxs]
+def split (X, y, sumDts, trainIdxs = None, testIdxs = None):
+	if trainIdxs == None:
+		idxs = np.random.permutation(X.shape[0])
+		numTraining = int(len(idxs) * 0.5)
+		trainIdxs = idxs[0:numTraining]
+		testIdxs = idxs[numTraining:]
+	return X[trainIdxs,:], y[trainIdxs], sumDts[trainIdxs], X[testIdxs,:], y[testIdxs], sumDts[testIdxs], trainIdxs, testIdxs
+
+def sampleWithReplacement (x, n):
+	if len(x) == 0:
+		return []
+	idxs = (np.random.random(n) * len(x)).astype(np.int32)
+	return x[idxs]
+
+# Evaluate using bootstrapping to estimate estimate performance with a *uniform* distribution
+# of sumDt for *both* classes.
+def evaluateWithUniformSumDts (y, yhat, sumDts):
+	sortedSumDts = np.sort(sumDts)
+	pct1 = sortedSumDts[int(len(sumDts)*0.01)]
+	pct99 = sortedSumDts[int(len(sumDts)*0.99)]
+	NUM_CHUNKS = 20
+	NUM_EXAMPLES_PER_CHUNK_PER_CLASS = 100
+	chunkSize = (pct99 - pct1) / NUM_CHUNKS
+	allY = []
+	allYhat = []
+	for sumDt in np.arange(pct1, pct99, chunkSize):
+		sumDt1 = sumDt
+		sumDt2 = sumDt + chunkSize
+		posIdxs = np.nonzero((sumDts >= sumDt1) & (sumDts < sumDt2) & (y == 1))[0]
+		negIdxs = np.nonzero((sumDts >= sumDt1) & (sumDts < sumDt2) & (y == 0))[0]
+		posIdxs = sampleWithReplacement(posIdxs, NUM_EXAMPLES_PER_CHUNK_PER_CLASS)
+		negIdxs = sampleWithReplacement(negIdxs, NUM_EXAMPLES_PER_CHUNK_PER_CLASS)
+		allY += list(y[posIdxs]) + list(y[negIdxs])
+		allYhat += list(yhat[posIdxs]) + list(yhat[negIdxs])
+	return sklearn.metrics.roc_auc_score(allY, allYhat)
+
+def train (somePc, somePcd, usernames, T0, Tc, trainIdxs=None, testIdxs=None, collapseOverTime=True, withNullspace=False):
+	# Get features and target values
+	X, y, sumDts = getXandY(somePc, somePcd, usernames, T0, Tc, collapseOverTime)
+	if len(np.nonzero(y == 0)[0]) < MIN_EXAMPLES or len(np.nonzero(y == 1)[0]) < MIN_EXAMPLES:
+		return
+	# Split into training and testing folds
+	trainX, trainY, trainSumDts, testX, testY, testSumDts, trainIdxs, testIdxs = split(X, y, sumDts, trainIdxs, testIdxs)
+	trainX, testX = normalize(trainX, testX)
+	mlr = sklearn.linear_model.LogisticRegression()
+	mlr.fit(trainX, trainY)
+	yhat = mlr.predict_proba(testX)[:,1]
+	print "  Raw"
+	print "    AUC={}".format(sklearn.metrics.roc_auc_score(testY, yhat))
+	print "  Uniform sum_dt"
+	print "    AUC={}".format(evaluateWithUniformSumDts(testY, yhat, testSumDts))
+
+	if withNullspace:
+		# Re-train after projecting features into nullspace of the vector that maximizes correlation
+		# of features with sum_dt
+		print "Uniform sum_dt after projecting into nullspace"
+		NUM_COMPONENTS = 30
+		for i in range(NUM_COMPONENTS):
+			z = np.linalg.solve(trainX.T.dot(trainX) + 1e-5 * np.eye(trainX.shape[1]), trainX.T.dot(trainSumDts))
+			z /= np.sum(z ** 2) ** 0.5  # Normalize
+			trainX -= np.outer(trainX.dot(z), z)
+		mlr.fit(trainX, trainY)
+		yhat = mlr.predict_proba(testX)[:,1]
+		print "  Uniform sum_dt after projecting features into nullspace"
+		print "    AUC={}".format(evaluateWithUniformSumDts(testY, yhat, testSumDts))
+		evaluateWithUniformSumDts(testY, yhat, testSumDts)
+	return trainIdxs, testIdxs
 
 if __name__ == "__main__":
 	if 'pcd' not in globals():
@@ -186,21 +257,13 @@ if __name__ == "__main__":
 
 		# Find start date T0 and cutoff date Tc
 		T0, Tc = computeCourseDates(courseId)
-		print T0
+		print T0, Tc
 		usernames = getRelevantUsers(somePc, Tc)
 
-		# Get features and target values
-		X, y = getXandY(somePc, somePcd, usernames, T0, Tc)
-		if len(np.nonzero(y == 0)[0]) < MIN_EXAMPLES or len(np.nonzero(y == 1)[0]) < MIN_EXAMPLES:
-			continue
-
-		# Split into training and testing folds
-		trainX, trainY, testX, testY = split(X, y)
-		trainX, testX = normalize(trainX, testX)
-
-		# Train and validate
-		mlr = sklearn.linear_model.LogisticRegression()
-		mlr.fit(trainX, trainY)
-		yhat = mlr.predict_proba(testX)[:,1]
-		auc = sklearn.metrics.roc_auc_score(testY, yhat)
-		print "AUC={}".format(auc)
+		print "Collapsed"
+		print "---------"
+		trainIdxs, testIdxs = train(somePc, somePcd, usernames, T0, Tc, collapseOverTime=True)
+		
+		print "Non-collapsed"
+		print "-------------"
+		train(somePc, somePcd, usernames, T0, Tc, trainIdxs=trainIdxs, testIdxs=testIdxs, collapseOverTime=False)
