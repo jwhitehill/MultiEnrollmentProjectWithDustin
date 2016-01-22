@@ -1,11 +1,16 @@
+import tensorflow as tf
 import pandas
 import math
 import numpy as np
 import sklearn.metrics
 import sklearn.linear_model
 
+NUM_EPOCHS = 10000
+BATCH_SIZE = 100
+
 MIN_EXAMPLES = 10
 START_DATES = {
+	'HarvardX/SW25x/1T2014': np.datetime64('2014-02-25'),
 	'HarvardX/SW12x/2013_SOND': np.datetime64('2013-10-31'),
 	'HarvardX/SW12.2x/1T2014': np.datetime64('2014-01-02'),
 	'HarvardX/SW12.3x/1T2014': np.datetime64('2014-02-13'),
@@ -29,6 +34,7 @@ START_DATES = {
 }
 
 PREDICTION_DATES = {
+	'HarvardX/SW25x/1T2014': np.datetime64('2014-03-18 17:00:00'),
 	'HarvardX/SW12x/2013_SOND': np.datetime64('2013-11-14 17:00:00'),
 	'HarvardX/SW12.2x/1T2014': np.datetime64('2014-01-08 05:00:00'),
 	'HarvardX/SW12.3x/1T2014': np.datetime64('2014-02-20 22:00:00'),
@@ -63,7 +69,8 @@ def loadPersonCourseData ():
 	return d
 
 def loadPersonCourseDayData ():
-	d = pandas.io.parsers.read_csv('course_report_latest-person_course_day_SW12x.csv.gz', compression='gzip')
+	#d = pandas.io.parsers.read_csv('course_report_latest-person_course_day_SW12x.csv.gz', compression='gzip')
+	d = pandas.io.parsers.read_csv('pcd_SW25x_1T2014.csv')
 	d = convertTimes(d, 'date')
 	courseIds = np.unique(d.course_id)
 	e = {}
@@ -71,6 +78,37 @@ def loadPersonCourseDayData ():
 		idxs = np.nonzero(d.course_id == courseId)[0]
 		e[courseId] = d.iloc[idxs]
 	return e
+
+def runNN (train_x, train_y, test_x, test_y, numHidden, numEpochs = NUM_EPOCHS):
+	print "NN({})".format(numHidden)
+	with tf.Graph().as_default():
+		session = tf.InteractiveSession()
+
+		x = tf.placeholder("float", shape=[None, train_x.shape[1]])
+		y_ = tf.placeholder("float", shape=[None, train_y.shape[1]])
+
+		W1 = makeVariable([train_x.shape[1],numHidden], stddev=0.5, wd=1e1, name="W1")
+		b1 = makeVariable([numHidden], stddev=0.5, wd=1e1, name="b1")
+		W2 = makeVariable([numHidden,train_y.shape[1]], stddev=0.5, wd=1e0, name="W2")
+
+		#level1 = tf.nn.relu(tf.matmul(x,W1) + b1)
+		level1 = tf.matmul(x,W1) + b1
+		y = tf.nn.softmax(tf.matmul(level1,W2))
+
+		cross_entropy = -tf.reduce_mean(y_*tf.log(tf.clip_by_value(y,1e-10,1.0)), name='cross_entropy')
+		tf.add_to_collection('losses', cross_entropy)
+		total_loss = tf.add_n(tf.get_collection('losses'), name='total_loss')
+
+		train_step = tf.train.MomentumOptimizer(learning_rate=.001, momentum=0.01).minimize(total_loss)
+		#train_step = tf.train.AdamOptimizer(learning_rate=.001).minimize(total_loss)
+
+		session.run(tf.initialize_all_variables())
+		for i in range(numEpochs):
+			offset = i*BATCH_SIZE % (train_x.shape[0] - BATCH_SIZE)
+			train_step.run({x: train_x[offset:offset+BATCH_SIZE, :], y_: train_y[offset:offset+BATCH_SIZE, :]})
+			if i % 500 == 0:
+				util.showProgress(cross_entropy, x, y, y_, test_x, test_y)
+		session.close()
 
 def convertTimes (d, colName):
         goodIdxs = []
@@ -100,7 +138,7 @@ def getRelevantUsers (pc, Tc):
 	idxs = np.nonzero((pc.start_time < Tc) & (pc.viewed == 1))[0]
 	return pc.username.iloc[idxs]
 
-def getXandY (pc, pcd, usernames, T0, Tc, collapseOverTime = False):
+def getXandY (pc, pcd, usernames, T0, Tc, collapseOverTime = False, ignoreFirstWeek = False):
 	# Restrict analysis to days between T0 and Tc
 	idxs = np.nonzero((pcd.date >= T0) & (pcd.date < Tc))[0]
 	pcd = pcd.iloc[idxs]
@@ -128,6 +166,10 @@ def getXandY (pc, pcd, usernames, T0, Tc, collapseOverTime = False):
 	# Extract features for all users and put them into the design matrix X
 	pcdDates = pcd.date
 	pcd = pcd.drop([ 'username', 'course_id', 'date', 'last_event' ], axis=1)
+
+	if ignoreFirstWeek:
+		idxs = np.nonzero(pcdDates >= T0 + np.timedelta64(7, 'D'))[0]
+		pcd.iloc[idxs] = 0
 
 	# DEBUG -- Only test specific features
 	#pcd = pcd[['nevents', 'sum_dt']]
@@ -211,21 +253,39 @@ def evaluateWithUniformSumDts (y, yhat, sumDts):
 		allYhat += list(yhat[posIdxs]) + list(yhat[negIdxs])
 	return sklearn.metrics.roc_auc_score(allY, allYhat)
 
-def train (somePc, somePcd, usernames, T0, Tc, trainIdxs=None, testIdxs=None, collapseOverTime=True, withNullspace=False):
+def trainNN (somePc, somePcd, usernames, T0, Tc, trainIdxs=None, testIdxs=None):
 	# Get features and target values
-	X, y, sumDts = getXandY(somePc, somePcd, usernames, T0, Tc, collapseOverTime)
+	X, y, sumDts = getXandY(somePc, somePcd, usernames, T0, Tc, True, False)
 	if len(np.nonzero(y == 0)[0]) < MIN_EXAMPLES or len(np.nonzero(y == 1)[0]) < MIN_EXAMPLES:
-		return
+		raise ValueError("Too few examples or all one class")
 	# Split into training and testing folds
 	trainX, trainY, trainSumDts, testX, testY, testSumDts, trainIdxs, testIdxs = split(X, y, sumDts, trainIdxs, testIdxs)
 	trainX, testX = normalize(trainX, testX)
-	mlr = sklearn.linear_model.LogisticRegression()
-	mlr.fit(trainX, trainY)
-	yhat = mlr.predict_proba(testX)[:,1]
+
+	model = sklearn.linear_model.LogisticRegression()
+	model.fit(trainX, trainY)
+
+	return model, trainIdxs, testIdxs, rawAuc
+
+def train (somePc, somePcd, usernames, T0, Tc, trainIdxs=None, testIdxs=None, collapseOverTime=True, withNullspace=False, withModel=None, ignoreFirstWeek=False):
+	# Get features and target values
+	X, y, sumDts = getXandY(somePc, somePcd, usernames, T0, Tc, collapseOverTime, ignoreFirstWeek)
+	if len(np.nonzero(y == 0)[0]) < MIN_EXAMPLES or len(np.nonzero(y == 1)[0]) < MIN_EXAMPLES:
+		raise ValueError("Too few examples or all one class")
+	# Split into training and testing folds
+	trainX, trainY, trainSumDts, testX, testY, testSumDts, trainIdxs, testIdxs = split(X, y, sumDts, trainIdxs, testIdxs)
+	trainX, testX = normalize(trainX, testX)
+	if withModel == None:
+		model = sklearn.linear_model.LogisticRegression()
+		model.fit(trainX, trainY)
+	else:
+		model = withModel
+	yhat = model.predict_proba(testX)[:,1]
 	print "  Raw"
-	print "    AUC={}".format(sklearn.metrics.roc_auc_score(testY, yhat))
-	print "  Uniform sum_dt"
-	print "    AUC={}".format(evaluateWithUniformSumDts(testY, yhat, testSumDts))
+	rawAuc = sklearn.metrics.roc_auc_score(testY, yhat)
+	print "    AUC={}".format(rawAuc)
+	#print "  Uniform sum_dt"
+	#print "    AUC={}".format(evaluateWithUniformSumDts(testY, yhat, testSumDts))
 
 	if withNullspace:
 		# Re-train after projecting features into nullspace of the vector that maximizes correlation
@@ -236,17 +296,19 @@ def train (somePc, somePcd, usernames, T0, Tc, trainIdxs=None, testIdxs=None, co
 			z = np.linalg.solve(trainX.T.dot(trainX) + 1e-5 * np.eye(trainX.shape[1]), trainX.T.dot(trainSumDts))
 			z /= np.sum(z ** 2) ** 0.5  # Normalize
 			trainX -= np.outer(trainX.dot(z), z)
-		mlr.fit(trainX, trainY)
-		yhat = mlr.predict_proba(testX)[:,1]
+		model.fit(trainX, trainY)
+		yhat = model.predict_proba(testX)[:,1]
 		print "  Uniform sum_dt after projecting features into nullspace"
 		print "    AUC={}".format(evaluateWithUniformSumDts(testY, yhat, testSumDts))
 		evaluateWithUniformSumDts(testY, yhat, testSumDts)
-	return trainIdxs, testIdxs
+	return model, trainIdxs, testIdxs, rawAuc
 
 if __name__ == "__main__":
 	if 'pcd' not in globals():
 		pcd = loadPersonCourseDayData()
 		pc = loadPersonCourseData()
+	#allModels = []
+	allAucs = {}
 	for courseId in set(pcd.keys()).intersection(START_DATES.keys()):  # For each course
 		print courseId
 		# Restrict analysis to rows of PC dataset relevant to this course
@@ -257,13 +319,23 @@ if __name__ == "__main__":
 
 		# Find start date T0 and cutoff date Tc
 		T0, Tc = computeCourseDates(courseId)
-		print T0, Tc
-		usernames = getRelevantUsers(somePc, Tc)
-
-		print "Collapsed"
-		print "---------"
-		trainIdxs, testIdxs = train(somePc, somePcd, usernames, T0, Tc, collapseOverTime=True)
-		
-		print "Non-collapsed"
-		print "-------------"
-		train(somePc, somePcd, usernames, T0, Tc, trainIdxs=trainIdxs, testIdxs=testIdxs, collapseOverTime=False)
+		#print T0, Tc
+		allTcs = list(np.arange(T0, Tc, np.timedelta64(1, 'D'))) + [ Tc ]
+		aucs = []
+		for Tc in allTcs:
+			print Tc
+			usernames = getRelevantUsers(somePc, Tc)
+			#print "Collapsed"
+			#print "---------"
+			try:
+				model, trainIdxs, testIdxs, auc = train(somePc, somePcd, usernames, T0, Tc, collapseOverTime=True, ignoreFirstWeek=False)
+				aucs.append(auc)
+			except ValueError:
+				pass
+			#allModels.append(model)
+			#print model.coef_
+			#print "Non-collapsed"
+			#print "-------------"
+			#train(somePc, somePcd, usernames, T0, Tc, trainIdxs=trainIdxs, testIdxs=testIdxs, collapseOverTime=False)
+		print ""
+		allAucs[courseId] = aucs
