@@ -1,11 +1,11 @@
 import tensorflow as tf
+import util
 import pandas
 import math
 import numpy as np
 import sklearn.metrics
 import sklearn.linear_model
 
-NUM_EPOCHS = 10000
 BATCH_SIZE = 100
 
 MIN_EXAMPLES = 10
@@ -69,8 +69,11 @@ def loadPersonCourseData ():
 	return d
 
 def loadPersonCourseDayData ():
-	#d = pandas.io.parsers.read_csv('course_report_latest-person_course_day_SW12x.csv.gz', compression='gzip')
-	d = pandas.io.parsers.read_csv('pcd_SW25x_1T2014.csv')
+	# Combine datasets
+	d = pandas.io.parsers.read_csv('course_report_latest-person_course_day_SW12x.csv.gz', compression='gzip')
+	e = pandas.io.parsers.read_csv('pcd_SW25x_1T2014.csv')
+	d = pandas.concat((d, e))
+
 	d = convertTimes(d, 'date')
 	courseIds = np.unique(d.course_id)
 	e = {}
@@ -79,36 +82,50 @@ def loadPersonCourseDayData ():
 		e[courseId] = d.iloc[idxs]
 	return e
 
-def runNN (train_x, train_y, test_x, test_y, numHidden, numEpochs = NUM_EPOCHS):
-	print "NN({})".format(numHidden)
+def makeVariable (shape, stddev, wd, name, collectionNames = [""]):
+	var = tf.Variable(tf.random_normal(shape, stddev=stddev), name=name)
+	weight_decay = tf.mul(tf.nn.l2_loss(var), wd)
+	# Caller may wish to add to multiple collections
+	for collectionName in collectionNames:
+		tf.add_to_collection("losses{}".format(collectionName), weight_decay)
+	return var
+
+def runNN (train_x, train_y, test_x, test_y):
+	global NUM_HIDDEN
+	print "NN({})".format(NUM_HIDDEN)
+	global LEARNING_RATE
+	global MOMENTUM
 	with tf.Graph().as_default():
 		session = tf.InteractiveSession()
 
 		x = tf.placeholder("float", shape=[None, train_x.shape[1]])
 		y_ = tf.placeholder("float", shape=[None, train_y.shape[1]])
 
-		W1 = makeVariable([train_x.shape[1],numHidden], stddev=0.5, wd=1e1, name="W1")
-		b1 = makeVariable([numHidden], stddev=0.5, wd=1e1, name="b1")
-		W2 = makeVariable([numHidden,train_y.shape[1]], stddev=0.5, wd=1e0, name="W2")
+		W1 = makeVariable([train_x.shape[1],NUM_HIDDEN], stddev=0.5, wd=1e-1, name="W1")
+		b1 = makeVariable([NUM_HIDDEN], stddev=0.5, wd=1e-1, name="b1")
+		W2 = makeVariable([NUM_HIDDEN,train_y.shape[1]], stddev=0.5, wd=1e-1, name="W2")
+		b2 = makeVariable([train_y.shape[1]], stddev=0.5, wd=1e-1, name="b2")
 
-		#level1 = tf.nn.relu(tf.matmul(x,W1) + b1)
-		level1 = tf.matmul(x,W1) + b1
-		y = tf.nn.softmax(tf.matmul(level1,W2))
+		level1 = tf.nn.relu(tf.matmul(x,W1) + b1)
+		y = tf.nn.softmax(tf.matmul(level1,W2) + b2)
 
-		cross_entropy = -tf.reduce_mean(y_*tf.log(tf.clip_by_value(y,1e-10,1.0)), name='cross_entropy')
+		cross_entropy = -tf.reduce_sum(y_*tf.log(tf.clip_by_value(y,1e-10,1.0)), name='cross_entropy')
 		tf.add_to_collection('losses', cross_entropy)
 		total_loss = tf.add_n(tf.get_collection('losses'), name='total_loss')
 
-		train_step = tf.train.MomentumOptimizer(learning_rate=.001, momentum=0.01).minimize(total_loss)
-		#train_step = tf.train.AdamOptimizer(learning_rate=.001).minimize(total_loss)
+		batch = tf.Variable(0)
+		learning_rate = tf.train.exponential_decay(LEARNING_RATE, batch * BATCH_SIZE, train_x.shape[0]/BATCH_SIZE, 0.95, staircase=True)
+		train_step = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=MOMENTUM).minimize(total_loss, global_step=batch)
 
 		session.run(tf.initialize_all_variables())
-		for i in range(numEpochs):
+		for i in range(NUM_EPOCHS):
 			offset = i*BATCH_SIZE % (train_x.shape[0] - BATCH_SIZE)
 			train_step.run({x: train_x[offset:offset+BATCH_SIZE, :], y_: train_y[offset:offset+BATCH_SIZE, :]})
-			if i % 500 == 0:
-				util.showProgress(cross_entropy, x, y, y_, test_x, test_y)
+			#if i % 500 == 0:
+			#	auc = util.showProgress(cross_entropy, x, y, y_, train_x, train_y)
+		auc = util.showProgress(cross_entropy, x, y, y_, test_x, test_y)
 		session.close()
+		return auc
 
 def convertTimes (d, colName):
         goodIdxs = []
@@ -253,62 +270,35 @@ def evaluateWithUniformSumDts (y, yhat, sumDts):
 		allYhat += list(yhat[posIdxs]) + list(yhat[negIdxs])
 	return sklearn.metrics.roc_auc_score(allY, allYhat)
 
-def trainNN (somePc, somePcd, usernames, T0, Tc, trainIdxs=None, testIdxs=None):
+def splitAndGetNormalizedFeatures (somePc, somePcd, usernames, T0, Tc):
 	# Get features and target values
 	X, y, sumDts = getXandY(somePc, somePcd, usernames, T0, Tc, True, False)
 	if len(np.nonzero(y == 0)[0]) < MIN_EXAMPLES or len(np.nonzero(y == 1)[0]) < MIN_EXAMPLES:
 		raise ValueError("Too few examples or all one class")
 	# Split into training and testing folds
-	trainX, trainY, trainSumDts, testX, testY, testSumDts, trainIdxs, testIdxs = split(X, y, sumDts, trainIdxs, testIdxs)
+	trainX, trainY, trainSumDts, testX, testY, testSumDts, trainIdxs, testIdxs = split(X, y, sumDts)
 	trainX, testX = normalize(trainX, testX)
+	return trainX, trainY, testX, testY
 
-	model = sklearn.linear_model.LogisticRegression()
-	model.fit(trainX, trainY)
+def trainNN (trainX, trainY, testX, testY):
+	global NUM_HIDDEN
+	testY = np.atleast_2d(testY).T
+	testY = np.hstack((1 - testY, testY))
+	trainY = np.atleast_2d(trainY).T
+	trainY = np.hstack((1 - trainY, trainY))
+	return runNN(trainX, trainY, testX, testY)
 
-	return model, trainIdxs, testIdxs, rawAuc
+def trainMLR (trainX, trainY, testX, testY):
+	global MLR_REG
+	baselineModel = sklearn.linear_model.LogisticRegression(C=MLR_REG)
+	baselineModel.fit(trainX, trainY)
+	yhat = baselineModel.predict_proba(testX)[:,1]
+	aucMLR = sklearn.metrics.roc_auc_score(testY, yhat)
+	return aucMLR
 
-def train (somePc, somePcd, usernames, T0, Tc, trainIdxs=None, testIdxs=None, collapseOverTime=True, withNullspace=False, withModel=None, ignoreFirstWeek=False):
-	# Get features and target values
-	X, y, sumDts = getXandY(somePc, somePcd, usernames, T0, Tc, collapseOverTime, ignoreFirstWeek)
-	if len(np.nonzero(y == 0)[0]) < MIN_EXAMPLES or len(np.nonzero(y == 1)[0]) < MIN_EXAMPLES:
-		raise ValueError("Too few examples or all one class")
-	# Split into training and testing folds
-	trainX, trainY, trainSumDts, testX, testY, testSumDts, trainIdxs, testIdxs = split(X, y, sumDts, trainIdxs, testIdxs)
-	trainX, testX = normalize(trainX, testX)
-	if withModel == None:
-		model = sklearn.linear_model.LogisticRegression()
-		model.fit(trainX, trainY)
-	else:
-		model = withModel
-	yhat = model.predict_proba(testX)[:,1]
-	print "  Raw"
-	rawAuc = sklearn.metrics.roc_auc_score(testY, yhat)
-	print "    AUC={}".format(rawAuc)
-	#print "  Uniform sum_dt"
-	#print "    AUC={}".format(evaluateWithUniformSumDts(testY, yhat, testSumDts))
-
-	if withNullspace:
-		# Re-train after projecting features into nullspace of the vector that maximizes correlation
-		# of features with sum_dt
-		print "Uniform sum_dt after projecting into nullspace"
-		NUM_COMPONENTS = 30
-		for i in range(NUM_COMPONENTS):
-			z = np.linalg.solve(trainX.T.dot(trainX) + 1e-5 * np.eye(trainX.shape[1]), trainX.T.dot(trainSumDts))
-			z /= np.sum(z ** 2) ** 0.5  # Normalize
-			trainX -= np.outer(trainX.dot(z), z)
-		model.fit(trainX, trainY)
-		yhat = model.predict_proba(testX)[:,1]
-		print "  Uniform sum_dt after projecting features into nullspace"
-		print "    AUC={}".format(evaluateWithUniformSumDts(testY, yhat, testSumDts))
-		evaluateWithUniformSumDts(testY, yhat, testSumDts)
-	return model, trainIdxs, testIdxs, rawAuc
-
-if __name__ == "__main__":
-	if 'pcd' not in globals():
-		pcd = loadPersonCourseDayData()
-		pc = loadPersonCourseData()
-	#allModels = []
-	allAucs = {}
+def prepareAllData (pc, pcd):
+	print "Preparing data..."
+	allCourseData = {}
 	for courseId in set(pcd.keys()).intersection(START_DATES.keys()):  # For each course
 		print courseId
 		# Restrict analysis to rows of PC dataset relevant to this course
@@ -316,26 +306,64 @@ if __name__ == "__main__":
 		somePc = pc.iloc[idxs]
 		idxs = np.nonzero(pcd[courseId].course_id == courseId)[0]
 		somePcd = pcd[courseId].iloc[idxs]
-
-		# Find start date T0 and cutoff date Tc
 		T0, Tc = computeCourseDates(courseId)
-		#print T0, Tc
-		allTcs = list(np.arange(T0, Tc, np.timedelta64(1, 'D'))) + [ Tc ]
-		aucs = []
-		for Tc in allTcs:
-			print Tc
-			usernames = getRelevantUsers(somePc, Tc)
-			#print "Collapsed"
-			#print "---------"
-			try:
-				model, trainIdxs, testIdxs, auc = train(somePc, somePcd, usernames, T0, Tc, collapseOverTime=True, ignoreFirstWeek=False)
-				aucs.append(auc)
-			except ValueError:
-				pass
-			#allModels.append(model)
-			#print model.coef_
-			#print "Non-collapsed"
-			#print "-------------"
-			#train(somePc, somePcd, usernames, T0, Tc, trainIdxs=trainIdxs, testIdxs=testIdxs, collapseOverTime=False)
-		print ""
-		allAucs[courseId] = aucs
+		usernames = getRelevantUsers(somePc, Tc)
+		allData = splitAndGetNormalizedFeatures (somePc, somePcd, usernames, T0, Tc)
+		allCourseData[courseId] = allData
+	print "...done"
+	return allCourseData
+
+def runExperiments (allCourseData, useNN):
+	allAucs = []
+	for courseId in set(pcd.keys()).intersection(START_DATES.keys()):  # For each course
+		# Find start date T0 and cutoff date Tc
+		(trainX, trainY, testX, testY) = allCourseData[courseId]
+		if useNN:
+			allAucs.append(trainNN(trainX, trainY, testX, testY))
+		else:
+			allAucs.append(trainMLR(trainX, trainY, testX, testY))
+	return np.mean(allAucs)
+
+def optimize (allCourseData):
+	# MLR
+	MLR_REG_SET = 10. ** np.arange(-5, +6).astype(np.float32)
+	bestAuc = -1
+	for paramValue in MLR_REG_SET:
+		global MLR_REG
+		MLR_REG = paramValue
+		avgAuc = runExperiments(allCourseData, False)
+		print avgAuc
+		if avgAuc > bestAuc:
+			bestAuc = avgAuc
+			bestParamValue = paramValue
+	print "MLR: {} for {}".format(bestAuc, bestParamValue)
+
+	# NN
+	global NUM_HIDDEN
+	NUM_HIDDEN = 2
+	global LEARNING_RATE
+	LEARNING_RATE_SET = 10. ** np.arange(-4, 0, 0.5).astype(np.float32)
+	global MOMENTUM
+	MOMENTUM_SET = 10. ** np.arange(-4, 0, 0.5).astype(np.float32)
+	global NUM_EPOCHS
+	NUM_EPOCHS_SET = np.arange(1000, 11000, 1000).astype(np.float32)
+	for learningRate in LEARNING_RATE_SET:
+		for momentum in MOMENTUM_SET:
+			for numEpochs in NUM_EPOCHS_SET:
+				LEARNING_RATE = learningRate
+				MOMENTUM = momentum
+				NUM_EPOCHS = numEpochs
+				avgAuc = runExperiments(allCourseData, True)
+				print avgAuc
+				if avgAuc > bestAuc:
+					bestAuc = avgAuc
+					bestParamValue = (learningRate, momentum, numEpochs)
+	print "NN: {} for {}".format(bestAuc, bestParamValue)
+
+if __name__ == "__main__":
+	if 'pcd' not in globals():
+		pcd = loadPersonCourseDayData()
+		pc = loadPersonCourseData()
+	if 'allCourseData' not in globals():
+		allCourseData = prepareAllData(pc, pcd)
+	optimize(allCourseData)
