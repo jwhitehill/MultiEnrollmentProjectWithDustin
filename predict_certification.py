@@ -1,4 +1,3 @@
-import tensorflow as tf
 import util
 import pandas
 import math
@@ -81,51 +80,6 @@ def loadPersonCourseDayData ():
 		idxs = np.nonzero(d.course_id == courseId)[0]
 		e[courseId] = d.iloc[idxs]
 	return e
-
-def makeVariable (shape, stddev, wd, name, collectionNames = [""]):
-	var = tf.Variable(tf.random_normal(shape, stddev=stddev), name=name)
-	weight_decay = tf.mul(tf.nn.l2_loss(var), wd)
-	# Caller may wish to add to multiple collections
-	for collectionName in collectionNames:
-		tf.add_to_collection("losses{}".format(collectionName), weight_decay)
-	return var
-
-def runNN (train_x, train_y, test_x, test_y):
-	global NUM_HIDDEN
-	print "NN({})".format(NUM_HIDDEN)
-	global LEARNING_RATE
-	global MOMENTUM
-	with tf.Graph().as_default():
-		session = tf.InteractiveSession()
-
-		x = tf.placeholder("float", shape=[None, train_x.shape[1]])
-		y_ = tf.placeholder("float", shape=[None, train_y.shape[1]])
-
-		W1 = makeVariable([train_x.shape[1],NUM_HIDDEN], stddev=0.5, wd=1e-1, name="W1")
-		b1 = makeVariable([NUM_HIDDEN], stddev=0.5, wd=1e-1, name="b1")
-		W2 = makeVariable([NUM_HIDDEN,train_y.shape[1]], stddev=0.5, wd=1e-1, name="W2")
-		b2 = makeVariable([train_y.shape[1]], stddev=0.5, wd=1e-1, name="b2")
-
-		level1 = tf.nn.relu(tf.matmul(x,W1) + b1)
-		y = tf.nn.softmax(tf.matmul(level1,W2) + b2)
-
-		cross_entropy = -tf.reduce_sum(y_*tf.log(tf.clip_by_value(y,1e-10,1.0)), name='cross_entropy')
-		tf.add_to_collection('losses', cross_entropy)
-		total_loss = tf.add_n(tf.get_collection('losses'), name='total_loss')
-
-		batch = tf.Variable(0)
-		learning_rate = tf.train.exponential_decay(LEARNING_RATE, batch * BATCH_SIZE, train_x.shape[0]/BATCH_SIZE, 0.95, staircase=True)
-		train_step = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=MOMENTUM).minimize(total_loss, global_step=batch)
-
-		session.run(tf.initialize_all_variables())
-		for i in range(NUM_EPOCHS):
-			offset = i*BATCH_SIZE % (train_x.shape[0] - BATCH_SIZE)
-			train_step.run({x: train_x[offset:offset+BATCH_SIZE, :], y_: train_y[offset:offset+BATCH_SIZE, :]})
-			#if i % 500 == 0:
-			#	auc = util.showProgress(cross_entropy, x, y, y_, train_x, train_y)
-		auc = util.showProgress(cross_entropy, x, y, y_, test_x, test_y)
-		session.close()
-		return auc
 
 def convertTimes (d, colName):
         goodIdxs = []
@@ -280,14 +234,6 @@ def splitAndGetNormalizedFeatures (somePc, somePcd, usernames, T0, Tc):
 	trainX, testX = normalize(trainX, testX)
 	return trainX, trainY, testX, testY
 
-def trainNN (trainX, trainY, testX, testY):
-	global NUM_HIDDEN
-	testY = np.atleast_2d(testY).T
-	testY = np.hstack((1 - testY, testY))
-	trainY = np.atleast_2d(trainY).T
-	trainY = np.hstack((1 - trainY, trainY))
-	return runNN(trainX, trainY, testX, testY)
-
 def trainMLR (trainX, trainY, testX, testY):
 	global MLR_REG
 	baselineModel = sklearn.linear_model.LogisticRegression(C=MLR_REG)
@@ -313,15 +259,12 @@ def prepareAllData (pc, pcd):
 	print "...done"
 	return allCourseData
 
-def runExperiments (allCourseData, useNN):
+def runExperiments (allCourseData):
 	allAucs = []
 	for courseId in set(pcd.keys()).intersection(START_DATES.keys()):  # For each course
 		# Find start date T0 and cutoff date Tc
 		(trainX, trainY, testX, testY) = allCourseData[courseId]
-		if useNN:
-			allAucs.append(trainNN(trainX, trainY, testX, testY))
-		else:
-			allAucs.append(trainMLR(trainX, trainY, testX, testY))
+		allAucs.append(trainMLR(trainX, trainY, testX, testY))
 	return np.mean(allAucs)
 
 def optimize (allCourseData):
@@ -336,29 +279,7 @@ def optimize (allCourseData):
 		if avgAuc > bestAuc:
 			bestAuc = avgAuc
 			bestParamValue = paramValue
-	print "MLR: {} for {}".format(bestAuc, bestParamValue)
-
-	# NN
-	global NUM_HIDDEN
-	NUM_HIDDEN = 2
-	global LEARNING_RATE
-	LEARNING_RATE_SET = 10. ** np.arange(-4, 0, 0.5).astype(np.float32)
-	global MOMENTUM
-	MOMENTUM_SET = 10. ** np.arange(-4, 0, 0.5).astype(np.float32)
-	global NUM_EPOCHS
-	NUM_EPOCHS_SET = np.arange(1000, 11000, 1000).astype(np.float32)
-	for learningRate in LEARNING_RATE_SET:
-		for momentum in MOMENTUM_SET:
-			for numEpochs in NUM_EPOCHS_SET:
-				LEARNING_RATE = learningRate
-				MOMENTUM = momentum
-				NUM_EPOCHS = numEpochs
-				avgAuc = runExperiments(allCourseData, True)
-				print avgAuc
-				if avgAuc > bestAuc:
-					bestAuc = avgAuc
-					bestParamValue = (learningRate, momentum, numEpochs)
-	print "NN: {} for {}".format(bestAuc, bestParamValue)
+	print "Accuracy: {} for {}".format(bestAuc, bestParamValue)
 
 if __name__ == "__main__":
 	if 'pcd' not in globals():
