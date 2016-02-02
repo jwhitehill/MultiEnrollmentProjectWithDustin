@@ -22,6 +22,7 @@ def showProgress (cross_entropy, x, y, y_, test_x, test_y, keep_prob = None):
 		ll = cross_entropy.eval({x: test_x, y_: test_y, keep_prob: 1.})
 		auc = sklearn.metrics.roc_auc_score(test_y[:,1], y.eval({x: test_x, keep_prob: 1.})[:,1])
 	print "LL={} AUC={}".format(ll, auc)
+	return auc
 
 def getNonNullData (d):
 	# Restrict to rows that are not null

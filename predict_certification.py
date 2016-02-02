@@ -32,7 +32,8 @@ START_DATES = {
 	#'HarvardX/SW12.10x/2015': np.datetime64('2015-11-20'),
 }
 
-PREDICTION_DATES = {
+# Dates corresponding to when students can earn 0.5 * number of points necessary for certification
+PREDICTION_DATES_0_5 = {
 	'HarvardX/SW25x/1T2014': np.datetime64('2014-03-18 17:00:00'),
 	'HarvardX/SW12x/2013_SOND': np.datetime64('2013-11-14 17:00:00'),
 	'HarvardX/SW12.2x/1T2014': np.datetime64('2014-01-08 05:00:00'),
@@ -100,14 +101,25 @@ def convertTimes (d, colName):
 		
 def computeCourseDates (courseId):
 	T0 = START_DATES[courseId]
-	Tc = PREDICTION_DATES[courseId]
-	#Tc = T0 + np.timedelta64(7, 'D')
-	return T0, Tc
+	Tc_0_5 = PREDICTION_DATES_0_5[courseId]
+	return T0, Tc_0_5
 
 # Get users whose start_date is before Tc and who participated in course
 def getRelevantUsers (pc, Tc):
 	idxs = np.nonzero((pc.start_time < Tc) & (pc.viewed == 1))[0]
 	return pc.username.iloc[idxs]
+
+def convertYoB (YoB):
+	REF_YEAR = 2012
+	YoB = REF_YEAR - YoB
+	ageRanges = [ -float('inf'), 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, +float('inf') ]
+	newYoB = np.zeros_like(YoB)
+	for i in range(len(ageRanges) - 1):
+		minAge = ageRanges[i]
+		maxAge = ageRanges[i+1]
+		idxs = np.nonzero((YoB >= minAge) & (YoB < maxAge))
+		newYoB[idxs] = i
+	return newYoB
 
 def getXandY (pc, pcd, usernames, T0, Tc, collapseOverTime = False, ignoreFirstWeek = False):
 	# Restrict analysis to days between T0 and Tc
@@ -120,7 +132,8 @@ def getXandY (pc, pcd, usernames, T0, Tc, collapseOverTime = False, ignoreFirstW
 	pcCertified = pc.certified
 	DEMOGRAPHIC_FIELDS = [ 'continent', 'YoB', 'LoE', 'gender' ]
 	pc = pc[DEMOGRAPHIC_FIELDS]
-	pc = pandas.get_dummies(pc, columns = [ 'continent', 'LoE', 'gender' ])
+	pc.YoB = convertYoB(pc.YoB)
+	pc = pandas.get_dummies(pc, columns = [ 'continent', 'LoE', 'gender', 'YoB' ], dummy_na = True)
 
 	# For efficiency, figure out which rows of the person-course and person-course-day
 	# datasets belong to which users
@@ -141,11 +154,6 @@ def getXandY (pc, pcd, usernames, T0, Tc, collapseOverTime = False, ignoreFirstW
 	if ignoreFirstWeek:
 		idxs = np.nonzero(pcdDates >= T0 + np.timedelta64(7, 'D'))[0]
 		pcd.iloc[idxs] = 0
-
-	# DEBUG -- Only test specific features
-	#pcd = pcd[['nevents', 'sum_dt']]
-	#pcd = pcd[['sum_dt']]
-	# END DEBUG
 
 	if collapseOverTime:
 		NUM_DAYS = 1
@@ -252,9 +260,9 @@ def prepareAllData (pc, pcd):
 		somePc = pc.iloc[idxs]
 		idxs = np.nonzero(pcd[courseId].course_id == courseId)[0]
 		somePcd = pcd[courseId].iloc[idxs]
-		T0, Tc = computeCourseDates(courseId)
-		usernames = getRelevantUsers(somePc, Tc)
-		allData = splitAndGetNormalizedFeatures (somePc, somePcd, usernames, T0, Tc)
+		T0, Tc_0_5, Tc_1_0 = computeCourseDates(courseId)
+		usernames = getRelevantUsers(somePc, Tc_0_5)
+		allData = splitAndGetNormalizedFeatures(somePc, somePcd, usernames, T0, Tc_0_5)
 		allCourseData[courseId] = allData
 	print "...done"
 	return allCourseData
@@ -264,17 +272,17 @@ def runExperiments (allCourseData):
 	for courseId in set(pcd.keys()).intersection(START_DATES.keys()):  # For each course
 		# Find start date T0 and cutoff date Tc
 		(trainX, trainY, testX, testY) = allCourseData[courseId]
-		allAucs.append(trainMLR(trainX, trainY, testX, testY))
+		auc = trainMLR(trainX, trainY, testX, testY)
+		allAucs.append(auc)
 	return np.mean(allAucs)
 
 def optimize (allCourseData):
-	# MLR
 	MLR_REG_SET = 10. ** np.arange(-5, +6).astype(np.float32)
 	bestAuc = -1
 	for paramValue in MLR_REG_SET:
 		global MLR_REG
-		MLR_REG = paramValue
-		avgAuc = runExperiments(allCourseData, False)
+		MLR_REG = float(paramValue)
+		avgAuc = runExperiments(allCourseData, predictCertification)
 		print avgAuc
 		if avgAuc > bestAuc:
 			bestAuc = avgAuc
