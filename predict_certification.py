@@ -242,9 +242,8 @@ def splitAndGetNormalizedFeatures (somePc, somePcd, usernames, T0, Tc):
 	trainX, testX = normalize(trainX, testX)
 	return trainX, trainY, testX, testY
 
-def trainMLR (trainX, trainY, testX, testY):
-	global MLR_REG
-	baselineModel = sklearn.linear_model.LogisticRegression(C=MLR_REG)
+def trainMLR (trainX, trainY, testX, testY, mlrReg):
+	baselineModel = sklearn.linear_model.LogisticRegression(C=mlrReg)
 	baselineModel.fit(trainX, trainY)
 	yhat = baselineModel.predict_proba(testX)[:,1]
 	aucMLR = sklearn.metrics.roc_auc_score(testY, yhat)
@@ -272,7 +271,8 @@ def runExperiments (allCourseData):
 	for courseId in set(pcd.keys()).intersection(START_DATES.keys()):  # For each course
 		# Find start date T0 and cutoff date Tc
 		(trainX, trainY, testX, testY) = allCourseData[courseId]
-		auc = trainMLR(trainX, trainY, testX, testY)
+		global MLR_REG
+		auc = trainMLR(trainX, trainY, testX, testY, MLR_REG)
 		allAucs.append(auc)
 	return np.mean(allAucs)
 
