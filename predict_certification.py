@@ -1,4 +1,5 @@
 import util
+import cPickle
 import pandas
 import math
 import numpy as np
@@ -6,7 +7,7 @@ import sklearn.metrics
 import sklearn.linear_model
 
 BATCH_SIZE = 100
-
+WEEK = np.timedelta64(7, 'D')
 MIN_EXAMPLES = 10
 START_DATES = {
 	'HarvardX/SW25x/1T2014': np.datetime64('2014-02-25'),
@@ -56,6 +57,22 @@ PREDICTION_DATES_0_5 = {
 	#'HarvardX/SW12.9x/2015': np.datetime64('2030-01-01'),
 	#'HarvardX/SW12.10x/2015': np.datetime64('2015-11-20')
 }
+
+# Dates corresponding to when students can earn 1.0 * number of points necessary for certification
+PREDICTION_DATES_1_0 = {
+	'HarvardX/SW25x/1T2014':      np.datetime64('2014-04-02 00:00:00'),
+	'HarvardX/SW12x/2013_SOND':   np.datetime64('2013-12-05 21:00:00'),
+	'HarvardX/SW12.2x/1T2014':    np.datetime64('2014-01-23 17:30:00'),
+	'HarvardX/SW12.3x/1T2014':    np.datetime64('2014-02-27 22:00:00'),
+	'HarvardX/SW12.4x/1T2014':    np.datetime64('2014-04-10 18:00:00'),
+	'HarvardX/SW12.5x/2T2014':    np.datetime64('2014-05-08 19:00:00'),
+	'HarvardX/SW12.6x/2T2014':    np.datetime64('2014-06-19 20:30:00'),
+	'HarvardX/SW12.7x/3T2014':    np.datetime64('2014-09-25 20:00:00'),
+	'HarvardX/SW12.8x/3T2014':    np.datetime64('2014-11-06 20:00:00'),
+	'HarvardX/SW12.9x/3T2014':    np.datetime64('2014-12-19 02:30:00'),
+	'HarvardX/SW12.10x/1T2015':   np.datetime64('2015-02-27 02:00:00')
+}
+
 # For each course:
 #		Get demographic information from person-course dataset
 #		Get list of rows from person-course-day dataset
@@ -101,8 +118,8 @@ def convertTimes (d, colName):
 		
 def computeCourseDates (courseId):
 	T0 = START_DATES[courseId]
-	Tc_0_5 = PREDICTION_DATES_0_5[courseId]
-	return T0, Tc_0_5
+	Tc = PREDICTION_DATES_1_0[courseId]
+	return T0, Tc
 
 # Get users whose start_date is before Tc and who participated in course
 def getRelevantUsers (pc, Tc):
@@ -111,14 +128,17 @@ def getRelevantUsers (pc, Tc):
 
 def convertYoB (YoB):
 	REF_YEAR = 2012
-	YoB = REF_YEAR - YoB
+	ages = REF_YEAR - YoB
 	ageRanges = [ -float('inf'), 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, +float('inf') ]
-	newYoB = np.zeros_like(YoB)
+	newYoB = np.zeros_like(ages)
 	for i in range(len(ageRanges) - 1):
 		minAge = ageRanges[i]
 		maxAge = ageRanges[i+1]
-		idxs = np.nonzero((YoB >= minAge) & (YoB < maxAge))
-		newYoB[idxs] = i
+		idxs = np.nonzero((ages >= minAge) & (ages < maxAge))
+		# In code below, we add 1 ("+ 1") so that the minimum index corresponding to
+		# any valid age range is 1, not 0. It follows that any invalid age range (i.e., NaN)
+		# will retain value 0.
+		newYoB[idxs] = i + 1 
 	return newYoB
 
 def getXandY (pc, pcd, usernames, T0, Tc, collapseOverTime = False, ignoreFirstWeek = False):
@@ -150,6 +170,9 @@ def getXandY (pc, pcd, usernames, T0, Tc, collapseOverTime = False, ignoreFirstW
 	# Extract features for all users and put them into the design matrix X
 	pcdDates = pcd.date
 	pcd = pcd.drop([ 'username', 'course_id', 'date', 'last_event' ], axis=1)
+
+	# Convert NaNs in person-course-day dataset to 0
+	pcd = pcd.fillna(value=0)
 
 	if ignoreFirstWeek:
 		idxs = np.nonzero(pcdDates >= T0 + np.timedelta64(7, 'D'))[0]
@@ -259,22 +282,33 @@ def prepareAllData (pc, pcd):
 		somePc = pc.iloc[idxs]
 		idxs = np.nonzero(pcd[courseId].course_id == courseId)[0]
 		somePcd = pcd[courseId].iloc[idxs]
-		T0, Tc_0_5, Tc_1_0 = computeCourseDates(courseId)
-		usernames = getRelevantUsers(somePc, Tc_0_5)
-		allData = splitAndGetNormalizedFeatures(somePc, somePcd, usernames, T0, Tc_0_5)
-		allCourseData[courseId] = allData
+		T0, Tc = computeCourseDates(courseId)
+		allCourseData[courseId] = []
+
+		Tcutoffs = np.arange(T0 + 1*WEEK, Tc, WEEK)
+		for Tcutoff in Tcutoffs:
+			usernames = getRelevantUsers(somePc, Tc)
+			allData = splitAndGetNormalizedFeatures(somePc, somePcd, usernames, T0, Tc)
+			allCourseData[courseId].append(allData)
 	print "...done"
 	return allCourseData
 
 def runExperiments (allCourseData):
-	allAucs = []
+	allAucs = {}
 	for courseId in set(pcd.keys()).intersection(START_DATES.keys()):  # For each course
-		# Find start date T0 and cutoff date Tc
-		(trainX, trainY, testX, testY) = allCourseData[courseId]
-		global MLR_REG
-		auc = trainMLR(trainX, trainY, testX, testY, MLR_REG)
-		allAucs.append(auc)
-	return np.mean(allAucs)
+		allAucs[courseId] = []
+		for i, weekData in enumerate(allCourseData[courseId]):
+			(trainX, trainY, testX, testY) = weekData
+			global MLR_REG
+			auc = trainMLR(trainX, trainY, testX, testY, MLR_REG)
+			allAucs[courseId].append(auc)
+	return allAucs
+
+def trainAll (allCourseData):
+	global MLR_REG
+	MLR_REG = 1.
+	allAucs = runExperiments(allCourseData)
+	cPickle.dump(results, open("results_prong1.pkl", "wb"))
 
 def optimize (allCourseData):
 	MLR_REG_SET = 10. ** np.arange(-5, +6).astype(np.float32)
@@ -282,7 +316,8 @@ def optimize (allCourseData):
 	for paramValue in MLR_REG_SET:
 		global MLR_REG
 		MLR_REG = float(paramValue)
-		avgAuc = runExperiments(allCourseData, predictCertification)
+		allAucs = runExperiments(allCourseData)
+		avgAuc = np.mean(aucs.values())
 		print avgAuc
 		if avgAuc > bestAuc:
 			bestAuc = avgAuc
@@ -295,4 +330,5 @@ if __name__ == "__main__":
 		pc = loadPersonCourseData()
 	if 'allCourseData' not in globals():
 		allCourseData = prepareAllData(pc, pcd)
-	optimize(allCourseData)
+	#optimize(allCourseData)
+	trainAll(allCourseData)

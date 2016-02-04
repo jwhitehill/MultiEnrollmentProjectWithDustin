@@ -1,29 +1,14 @@
 import util
+import cPickle
+import quantify
 import pandas
 import math
 import numpy as np
 import sklearn.metrics
 import sklearn.linear_model
 from predict_certification import loadPersonCourseData, loadPersonCourseDayData, \
-                                convertTimes, getRelevantUsers, convertYoB, normalize, \
-				trainMLR, START_DATES, MIN_EXAMPLES
-
-WEEK = np.timedelta64(7, 'D')
-
-# Dates corresponding to when students can earn 0.5 * number of points necessary for certification
-PREDICTION_DATES_1_0 = {
-	'HarvardX/SW25x/1T2014':      np.datetime64('2014-04-02 00:00:00'),
-	'HarvardX/SW12x/2013_SOND':   np.datetime64('2013-12-05 21:00:00'),
-	'HarvardX/SW12.2x/1T2014':    np.datetime64('2014-01-23 17:30:00'),
-	'HarvardX/SW12.3x/1T2014':    np.datetime64('2014-02-27 22:00:00'),
-	'HarvardX/SW12.4x/1T2014':    np.datetime64('2014-04-10 18:00:00'),
-	'HarvardX/SW12.5x/2T2014':    np.datetime64('2014-05-08 19:00:00'),
-	'HarvardX/SW12.6x/2T2014':    np.datetime64('2014-06-19 20:30:00'),
-	'HarvardX/SW12.7x/3T2014':    np.datetime64('2014-09-25 20:00:00'),
-	'HarvardX/SW12.8x/3T2014':    np.datetime64('2014-11-06 20:00:00'),
-	'HarvardX/SW12.9x/3T2014':    np.datetime64('2014-12-19 02:30:00'),
-	'HarvardX/SW12.10x/1T2015':   np.datetime64('2015-02-27 02:00:00')
-}
+                                convertTimes, getRelevantUsers, convertYoB, \
+				trainMLR, START_DATES, MIN_EXAMPLES, WEEK, PREDICTION_DATES_1_0 
 
 def computeCourseDates (courseId):
 	T0 = START_DATES[courseId]
@@ -31,17 +16,28 @@ def computeCourseDates (courseId):
 	return T0, Tc_1_0
 
 def runExperiments (allCourseData):
-	allAucs = []
+	allAucs = {}
+	allAucsCert = {}
 	for courseId in set(pcd.keys()).intersection(START_DATES.keys()):  # For each course
-		print courseId
+		#print courseId
+		allAucs[courseId] = []
+		allAucsCert[courseId] = []
 		for i, weekData in enumerate(allCourseData[courseId]):
 			# Find start date T0 and cutoff date Tc
-			(trainX, trainY, testX, testY) = weekData
+			(trainX, trainY, trainYcert, testX, testY, testYcert) = weekData
 			auc = trainMLR(trainX, trainY, testX, testY, 1.)
-			print "To predict week {}: {}".format(i+3, auc)
-			allAucs.append(auc)
-		print
-	return np.mean(allAucs)
+			aucCert = trainMLR(trainX, trainY, testX, testYcert, 1.)
+			#print "To predict week {}: {}".format(i+3, auc)
+			allAucs[courseId].append(auc)
+			allAucsCert[courseId].append(aucCert)
+		#print
+	return allAucs, allAucsCert
+
+def trainAll (allCourseData):
+	global MLR_REG
+	MLR_REG = 1.
+	results = runExperiments(allCourseData)
+	cPickle.dump(results, open("results_prong2.pkl", "wb"))
 
 def optimize (allCourseData):
 	MLR_REG_SET = 10. ** np.arange(-5, +6).astype(np.float32)
@@ -49,14 +45,29 @@ def optimize (allCourseData):
 	for paramValue in MLR_REG_SET:
 		global MLR_REG
 		MLR_REG = float(paramValue)
-		avgAuc = runExperiments(allCourseData)
-		print avgAuc
+		allAucs, unused = runExperiments(allCourseData)
+		avgAuc = np.mean(np.hstack(allAucs.values()))
+		print allAucs
+		print "Mean acc: {}".format(avgAuc)
 		if avgAuc > bestAuc:
 			bestAuc = avgAuc
 			bestParamValue = paramValue
 	print "Accuracy: {} for {}".format(bestAuc, bestParamValue)
 
-def getXandY (pc, pcd, usernames, T0, Tc):
+#def convertToQuantiles (X):
+#	X = np.array(X, dtype=np.float32)
+#	N = X.shape[0]
+#	Xquantiles = np.zeros_like(X, dtype=np.float32)
+#	for i in range(X.shape[1]):
+#		col = X[:,i]
+#		colSorted = np.tile(np.atleast_2d(np.sort(col, axis=0)), (N, 1))
+#		colRep = np.tile(np.atleast_2d(col).T, (1, N))
+#		# Line below: for each observation (element of col), find the smallest index
+#		# in the *sorted* column that is >= that observation. Then normalize.
+#		Xquantiles[:,i] = np.argmax(colRep <= colSorted, axis=1) / float(N)
+#	return Xquantiles
+
+def getXandY (pc, pcd, usernames, T0, Tc, normalize):
 	# TARGET VALUES
 	# The target value for each user consists of whether or not the user
 	# did *anything* during the week just prior to Tc
@@ -74,6 +85,7 @@ def getXandY (pc, pcd, usernames, T0, Tc):
 	
 	# Create dummy variables
 	pcUsernames = pc.username
+	usernamesToCertifiedMap = { pcUsernames.iloc[i]:pc.certified.iloc[i] for i in range(len(pcUsernames)) }
 	DEMOGRAPHIC_FIELDS = [ 'continent', 'YoB', 'LoE', 'gender' ]
 	pc = pc[DEMOGRAPHIC_FIELDS]
 	pc.YoB = convertYoB(pc.YoB)
@@ -93,36 +105,42 @@ def getXandY (pc, pcd, usernames, T0, Tc):
 
 	# Extract features for all users and put them into the design matrix X
 	pcd = pcd.drop([ 'username', 'course_id', 'date', 'last_event' ], axis=1)
+	
+	# Convert NaNs in person-course-day dataset to 0
+	pcd = pcd.fillna(value=0)
+	pcd = pcd.as_matrix()
+	if normalize:
+		pcd = pcd.astype(np.float32)
+		quantify.quantify(pcd.shape[0], pcd.shape[1], pcd)
 
-	NUM_FEATURES = len(pcd.columns) + len(pc.columns)
+	NUM_FEATURES = pcd.shape[1] + len(pc.columns)
 	X = np.zeros((len(usernames), NUM_FEATURES))
 	y = np.zeros(len(usernames))
-	goodIdxs = []
+	yCert = np.zeros(len(usernames))
 	for i, username in enumerate(usernames):
 		idxs = usernamesToPcdIdxsMap[username]
 		# For each row in the person-course-day dataset for this user, put the
 		# features into the correct column range for that user in the design matrix X.
-		X[i,0:len(pcd.columns)] = np.sum(pcd.iloc[idxs].as_matrix(), axis=0)  # Call as_matrix() so nan is treated as nan in sum!
+		X[i,0:pcd.shape[1]] = np.sum(pcd[idxs,:], axis=0)
 		# Now append the demographic features
 		demographics = pc.iloc[usernamesToPcIdxsMap[username]]
-		X[i,len(pcd.columns):] = demographics
+		X[i,pcd.shape[1]:] = demographics
 		y[i] = username in usersWhoPersisted
-		if np.isfinite(np.sum(X[i,:])):
-			goodIdxs.append(i)
-	return X[goodIdxs,:], y[goodIdxs]
+		yCert[i] = usernamesToCertifiedMap[username]
+	return X, y, yCert
 
-def splitAndGetNormalizedFeatures (somePc, somePcd, usernames, T0, Tc):
+def extractFeaturesAndTargets (somePc, somePcd, usernames, T0, Tc, normalize):
 	# Get features and target values
-	trainX, trainY = getXandY(somePc, somePcd, usernames, T0, Tc - 1*WEEK)
-	testX, testY = getXandY(somePc, somePcd, usernames, T0, Tc)
+	trainX, trainY, trainYcert = getXandY(somePc, somePcd, usernames, T0, Tc - 1*WEEK, normalize)
+	testX, testY, testYcert = getXandY(somePc, somePcd, usernames, T0, Tc, normalize)
 
 	if len(np.nonzero(trainY == 0)[0]) < MIN_EXAMPLES or len(np.nonzero(trainY == 1)[0]) < MIN_EXAMPLES:
 		raise ValueError("Train: Too few examples or all one class")
 	if len(np.nonzero(testY == 0)[0]) < MIN_EXAMPLES or len(np.nonzero(testY == 1)[0]) < MIN_EXAMPLES:
 		raise ValueError("Test: Too few examples or all one class")
-	return trainX, trainY, testX, testY
+	return trainX, trainY, trainYcert, testX, testY, testYcert
 
-def prepareAllData (pc, pcd):
+def prepareAllData (pc, pcd, normalize):
 	print "Preparing data..."
 	allCourseData = {}
 	for courseId in set(pcd.keys()).intersection(START_DATES.keys()):  # For each course
@@ -141,17 +159,19 @@ def prepareAllData (pc, pcd):
 		Tcutoffs = np.arange(T0 + 3*WEEK, Tc, WEEK)
 		for Tcutoff in Tcutoffs:
 			# The users that we train/test on must have entered the course by the end of the
-			# *first* week of this 3-week block. Hence, we subtract 2 weeks.
+			# *first* week of the last 3 weeks in the time range. Hence, we subtract 2 weeks.
 			usernames = getRelevantUsers(somePc, Tcutoff - 2*WEEK)
-			allData = splitAndGetNormalizedFeatures(somePc, somePcd, usernames, T0, Tcutoff)
+			allData = extractFeaturesAndTargets(somePc, somePcd, usernames, T0, Tcutoff, normalize)
 			allCourseData[courseId].append(allData)
 	print "...done"
 	return allCourseData
 
 if __name__ == "__main__":
+	NORMALIZE = True
 	if 'pcd' not in globals():
 		pcd = loadPersonCourseDayData()
 		pc = loadPersonCourseData()
 	if 'allCourseData' not in globals():
-		allCourseData = prepareAllData(pc, pcd)
-	optimize(allCourseData)
+		allCourseData = prepareAllData(pc, pcd, NORMALIZE)
+	#optimize(allCourseData)
+	trainAll(allCourseData)
