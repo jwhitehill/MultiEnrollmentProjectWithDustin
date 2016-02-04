@@ -287,8 +287,8 @@ def prepareAllData (pc, pcd):
 
 		Tcutoffs = np.arange(T0 + 1*WEEK, Tc, WEEK)
 		for Tcutoff in Tcutoffs:
-			usernames = getRelevantUsers(somePc, Tc)
-			allData = splitAndGetNormalizedFeatures(somePc, somePcd, usernames, T0, Tc)
+			usernames = getRelevantUsers(somePc, Tcutoff)
+			allData = splitAndGetNormalizedFeatures(somePc, somePcd, usernames, T0, Tcutoff)
 			allCourseData[courseId].append(allData)
 	print "...done"
 	return allCourseData
@@ -308,7 +308,7 @@ def trainAll (allCourseData):
 	global MLR_REG
 	MLR_REG = 1.
 	allAucs = runExperiments(allCourseData)
-	cPickle.dump(results, open("results_prong1.pkl", "wb"))
+	cPickle.dump(allAucs, open("results_prong1.pkl", "wb"))
 
 def optimize (allCourseData):
 	MLR_REG_SET = 10. ** np.arange(-5, +6).astype(np.float32)
