@@ -149,7 +149,7 @@ def getXandY (pc, pcd, usernames, T0, Tc, collapseOverTime = False, ignoreFirstW
 	# Create dummy variables
 	pcUsernames = pc.username
 	usernamesToCertifiedMap = { pcUsernames.iloc[i]:pc.certified.iloc[i] for i in range(len(pcUsernames)) }
-	pcCertified = pc.certified
+	usernamesToLastEventMap = { pcUsernames.iloc[i]:pc.last_event.iloc[i] for i in range(len(pcUsernames)) }
 	DEMOGRAPHIC_FIELDS = [ 'continent', 'YoB', 'LoE', 'gender' ]
 	pc = pc[DEMOGRAPHIC_FIELDS]
 	pc.YoB = convertYoB(pc.YoB)
@@ -184,6 +184,7 @@ def getXandY (pc, pcd, usernames, T0, Tc, collapseOverTime = False, ignoreFirstW
 		NUM_DAYS = int(math.ceil((Tc - T0) / np.timedelta64(1, 'D')))
 	NUM_FEATURES = NUM_DAYS * len(pcd.columns) + len(pc.columns)
 	X = np.zeros((len(usernames), NUM_FEATURES))
+	Xheur = np.zeros(len(usernames))
 	y = np.zeros(len(usernames))
 	sumDts = np.zeros((len(usernames), NUM_DAYS))  # Keep track of sum_dt as a special feature
 	goodIdxs = []
@@ -203,10 +204,16 @@ def getXandY (pc, pcd, usernames, T0, Tc, collapseOverTime = False, ignoreFirstW
 		# Now append the demographic features
 		demographics = pc.iloc[usernamesToPcIdxsMap[username]]
 		X[i,NUM_DAYS * len(pcd.columns):] = demographics
+		# "Heuristic" predictor -- whether the student's last event time is before/after the first week of the course
+		lastEvent = usernamesToLastEventMap[username]
+		if np.isfinite(lastEvent):
+			Xheur[i] = lastEvent > (T0 + np.timedelta64(7, 'D'))
+		else:
+			Xheur[i] = 0
 		y[i] = usernamesToCertifiedMap[username]
 		if np.isfinite(np.sum(X[i,:])):
 			goodIdxs.append(i)
-	return X[goodIdxs,:], y[goodIdxs], np.sum(sumDts[goodIdxs,:], axis=1)
+	return X[goodIdxs,:], Xheur[goodIdxs], y[goodIdxs], np.sum(sumDts[goodIdxs,:], axis=1)
 
 def normalize (trainX, testX):
 	mx = np.mean(trainX, axis=0)
@@ -219,13 +226,13 @@ def normalize (trainX, testX):
 	testX /= np.tile(np.atleast_2d(sx), (testX.shape[0], 1))
 	return trainX, testX
 
-def split (X, y, sumDts, trainIdxs = None, testIdxs = None):
+def split (X, Xheur, y, sumDts, trainIdxs = None, testIdxs = None):
 	if trainIdxs == None:
 		idxs = np.random.permutation(X.shape[0])
 		numTraining = int(len(idxs) * 0.5)
 		trainIdxs = idxs[0:numTraining]
 		testIdxs = idxs[numTraining:]
-	return X[trainIdxs,:], y[trainIdxs], sumDts[trainIdxs], X[testIdxs,:], y[testIdxs], sumDts[testIdxs], trainIdxs, testIdxs
+	return X[trainIdxs,:], Xheur[trainIdxs], y[trainIdxs], sumDts[trainIdxs], X[testIdxs,:], Xheur[testIdxs], y[testIdxs], sumDts[testIdxs], trainIdxs, testIdxs
 
 def sampleWithReplacement (x, n):
 	if len(x) == 0:
@@ -257,13 +264,13 @@ def evaluateWithUniformSumDts (y, yhat, sumDts):
 
 def splitAndGetNormalizedFeatures (somePc, somePcd, usernames, T0, Tc):
 	# Get features and target values
-	X, y, sumDts = getXandY(somePc, somePcd, usernames, T0, Tc, True, False)
+	X, Xheur, y, sumDts = getXandY(somePc, somePcd, usernames, T0, Tc, True, False)
 	if len(np.nonzero(y == 0)[0]) < MIN_EXAMPLES or len(np.nonzero(y == 1)[0]) < MIN_EXAMPLES:
 		raise ValueError("Too few examples or all one class")
 	# Split into training and testing folds
-	trainX, trainY, trainSumDts, testX, testY, testSumDts, trainIdxs, testIdxs = split(X, y, sumDts)
+	trainX, trainXheur, trainY, trainSumDts, testX, testXheur, testY, testSumDts, trainIdxs, testIdxs = split(X, Xheur, y, sumDts)
 	trainX, testX = normalize(trainX, testX)
-	return trainX, trainY, testX, testY
+	return trainX, trainXheur, trainY, testX, testXheur, testY
 
 def trainMLR (trainX, trainY, testX, testY, mlrReg):
 	baselineModel = sklearn.linear_model.LogisticRegression(C=mlrReg)
@@ -293,6 +300,16 @@ def prepareAllData (pc, pcd):
 	print "...done"
 	return allCourseData
 
+def runExperimentsHeuristic ():
+	allAucs = {}
+	for courseId in set(pcd.keys()).intersection(START_DATES.keys()):  # For each course
+		allAucs[courseId] = []
+		for i, weekData in enumerate(allCourseData[courseId]):
+			(trainX, trainXheur, trainY, testX, testXheur, testY) = weekData
+			auc = sklearn.metrics.roc_auc_score(testXheur, testY)
+			allAucs[courseId].append(auc)
+	return allAucs
+
 def runExperiments (allCourseData):
 	allAucs = {}
 	for courseId in set(pcd.keys()).intersection(START_DATES.keys()):  # For each course
@@ -303,6 +320,10 @@ def runExperiments (allCourseData):
 			auc = trainMLR(trainX, trainY, testX, testY, MLR_REG)
 			allAucs[courseId].append(auc)
 	return allAucs
+
+def trainAllHeuristic ():
+	allAucs = runExperimentsHeuristic()
+	cPickle.dump(allAucs, open("results_prong_heuristic.pkl", "wb"))
 
 def trainAll (allCourseData):
 	global MLR_REG
@@ -332,3 +353,5 @@ if __name__ == "__main__":
 		allCourseData = prepareAllData(pc, pcd)
 	#optimize(allCourseData)
 	trainAll(allCourseData)
+
+	trainAllHeuristic()
