@@ -157,6 +157,7 @@ def prepareAllData (pc, pcd, normalize):
 		# features are extracted from week 1). But then to *evaluate* that model, we need
 		# another (3rd) week.
 		Tcutoffs = np.arange(T0 + 3*WEEK, Tc, WEEK)
+		print courseId, Tcutoffs
 		for Tcutoff in Tcutoffs:
 			# The users that we train/test on must have entered the course by the end of the
 			# *first* week of the last 3 weeks in the time range. Hence, we subtract 2 weeks.

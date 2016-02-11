@@ -6,6 +6,7 @@ import numpy as np
 import sklearn.metrics
 import sklearn.linear_model
 
+NUM_WEEKS_HEURISTIC = 2
 BATCH_SIZE = 100
 WEEK = np.timedelta64(7, 'D')
 MIN_EXAMPLES = 10
@@ -206,8 +207,8 @@ def getXandY (pc, pcd, usernames, T0, Tc, collapseOverTime = False, ignoreFirstW
 		X[i,NUM_DAYS * len(pcd.columns):] = demographics
 		# "Heuristic" predictor -- whether the student's last event time is before/after the first week of the course
 		lastEvent = usernamesToLastEventMap[username]
-		if np.isfinite(lastEvent):
-			Xheur[i] = lastEvent > (T0 + np.timedelta64(7, 'D'))
+		if (lastEvent != 'nan') and (lastEvent == lastEvent):  # np.isfinite doesn't work for dates, so we have to check if it equals itself
+			Xheur[i] = np.datetime64(lastEvent) > (T0 + np.timedelta64(7*NUM_WEEKS_HEURISTIC, 'D'))  # Did they persist beyond 2 weeks into course?
 		else:
 			Xheur[i] = 0
 		y[i] = usernamesToCertifiedMap[username]
@@ -305,9 +306,10 @@ def runExperimentsHeuristic ():
 	for courseId in set(pcd.keys()).intersection(START_DATES.keys()):  # For each course
 		allAucs[courseId] = []
 		for i, weekData in enumerate(allCourseData[courseId]):
-			(trainX, trainXheur, trainY, testX, testXheur, testY) = weekData
-			auc = sklearn.metrics.roc_auc_score(testXheur, testY)
-			allAucs[courseId].append(auc)
+			if i >= (NUM_WEEKS_HEURISTIC - 1):
+				(trainX, trainXheur, trainY, testX, testXheur, testY) = weekData
+				auc = sklearn.metrics.roc_auc_score(testY, testXheur)
+				allAucs[courseId].append(auc)
 	return allAucs
 
 def runExperiments (allCourseData):
@@ -315,7 +317,7 @@ def runExperiments (allCourseData):
 	for courseId in set(pcd.keys()).intersection(START_DATES.keys()):  # For each course
 		allAucs[courseId] = []
 		for i, weekData in enumerate(allCourseData[courseId]):
-			(trainX, trainY, testX, testY) = weekData
+			(trainX, trainXheur, trainY, testX, testXheur, testY) = weekData
 			global MLR_REG
 			auc = trainMLR(trainX, trainY, testX, testY, MLR_REG)
 			allAucs[courseId].append(auc)
@@ -323,7 +325,7 @@ def runExperiments (allCourseData):
 
 def trainAllHeuristic ():
 	allAucs = runExperimentsHeuristic()
-	cPickle.dump(allAucs, open("results_prong_heuristic.pkl", "wb"))
+	cPickle.dump(allAucs, open("results_heuristic.pkl", "wb"))
 
 def trainAll (allCourseData):
 	global MLR_REG
@@ -352,6 +354,6 @@ if __name__ == "__main__":
 	if 'allCourseData' not in globals():
 		allCourseData = prepareAllData(pc, pcd)
 	#optimize(allCourseData)
-	trainAll(allCourseData)
+	#trainAll(allCourseData)
 
 	trainAllHeuristic()
