@@ -25,8 +25,8 @@ def runExperiments (allCourseData):
 		for i, weekData in enumerate(allCourseData[courseId]):
 			# Find start date T0 and cutoff date Tc
 			(trainX, trainY, trainYcert, testX, testY, testYcert) = weekData
-			auc = trainMLR(trainX, trainY, testX, testY, 1.)
-			aucCert = trainMLR(trainX, trainY, testX, testYcert, 1.)
+			auc, _ = trainMLR(trainX, trainY, testX, testY, 1.)
+			aucCert, _ = trainMLR(trainX, trainY, testX, testYcert, 1.)
 			#print "To predict week {}: {}".format(i+3, auc)
 			allAucs[courseId].append(auc)
 			allAucsCert[courseId].append(aucCert)
@@ -100,8 +100,8 @@ def getXandY (pc, pcd, usernames, T0, Tc, normalize):
 		usernamesToPcdIdxsMap.setdefault(username, [])
 		usernamesToPcdIdxsMap[username].append(i)
 
-	# Only analyze users who appear in the person-course-day dataset
-	usernames = list(set(usernames).intersection(usernamesToPcdIdxsMap.keys()))
+	### Only analyze users who appear in the person-course-day dataset
+	##usernames = list(set(usernames).intersection(usernamesToPcdIdxsMap.keys()))
 
 	# Extract features for all users and put them into the design matrix X
 	pcd = pcd.drop([ 'username', 'course_id', 'date', 'last_event' ], axis=1)
@@ -118,10 +118,13 @@ def getXandY (pc, pcd, usernames, T0, Tc, normalize):
 	y = np.zeros(len(usernames))
 	yCert = np.zeros(len(usernames))
 	for i, username in enumerate(usernames):
-		idxs = usernamesToPcdIdxsMap[username]
-		# For each row in the person-course-day dataset for this user, put the
-		# features into the correct column range for that user in the design matrix X.
-		X[i,0:pcd.shape[1]] = np.sum(pcd[idxs,:], axis=0)
+		if username in usernamesToPcdIdxsMap.keys():
+			idxs = usernamesToPcdIdxsMap[username]
+			# For each row in the person-course-day dataset for this user, put the
+			# features into the correct column range for that user in the design matrix X.
+			X[i,0:pcd.shape[1]] = np.sum(pcd[idxs,:], axis=0)
+		else:
+			X[i,0:pcd.shape[1]] = np.zeros(pcd.shape[1])
 		# Now append the demographic features
 		demographics = pc.iloc[usernamesToPcIdxsMap[username]]
 		X[i,pcd.shape[1]:] = demographics

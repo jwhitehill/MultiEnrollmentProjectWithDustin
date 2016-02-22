@@ -142,7 +142,7 @@ def convertYoB (YoB):
 		newYoB[idxs] = i + 1 
 	return newYoB
 
-def getXandY (pc, pcd, usernames, T0, Tc, collapseOverTime = False, ignoreFirstWeek = False):
+def getXandY (pc, pcd, usernames, T0, Tc, demographicsOnly):
 	# Restrict analysis to days between T0 and Tc
 	idxs = np.nonzero((pcd.date >= T0) & (pcd.date < Tc))[0]
 	pcd = pcd.iloc[idxs]
@@ -165,8 +165,8 @@ def getXandY (pc, pcd, usernames, T0, Tc, collapseOverTime = False, ignoreFirstW
 		usernamesToPcdIdxsMap.setdefault(username, [])
 		usernamesToPcdIdxsMap[username].append(i)
 
-	# Only analyze users who appear in the person-course-day dataset
-	usernames = list(set(usernames).intersection(usernamesToPcdIdxsMap.keys()))
+	### Only analyze users who appear in the person-course-day dataset
+	##usernames = list(set(usernames).intersection(usernamesToPcdIdxsMap.keys()))
 
 	# Extract features for all users and put them into the design matrix X
 	pcdDates = pcd.date
@@ -175,14 +175,7 @@ def getXandY (pc, pcd, usernames, T0, Tc, collapseOverTime = False, ignoreFirstW
 	# Convert NaNs in person-course-day dataset to 0
 	pcd = pcd.fillna(value=0)
 
-	if ignoreFirstWeek:
-		idxs = np.nonzero(pcdDates >= T0 + np.timedelta64(7, 'D'))[0]
-		pcd.iloc[idxs] = 0
-
-	if collapseOverTime:
-		NUM_DAYS = 1
-	else:
-		NUM_DAYS = int(math.ceil((Tc - T0) / np.timedelta64(1, 'D')))
+	NUM_DAYS = 1
 	NUM_FEATURES = NUM_DAYS * len(pcd.columns) + len(pc.columns)
 	X = np.zeros((len(usernames), NUM_FEATURES))
 	Xheur = np.zeros(len(usernames))
@@ -190,18 +183,15 @@ def getXandY (pc, pcd, usernames, T0, Tc, collapseOverTime = False, ignoreFirstW
 	sumDts = np.zeros((len(usernames), NUM_DAYS))  # Keep track of sum_dt as a special feature
 	goodIdxs = []
 	for i, username in enumerate(usernames):
-		idxs = usernamesToPcdIdxsMap[username]
-		# For each row in the person-course-day dataset for this user, put the
-		# features into the correct column range for that user in the design matrix X.
-		if collapseOverTime:
+		if username in usernamesToPcdIdxsMap.keys():
+			idxs = usernamesToPcdIdxsMap[username]
+			# For each row in the person-course-day dataset for this user, put the
+			# features into the correct column range for that user in the design matrix X.
 			X[i,0:len(pcd.columns)] = np.sum(pcd.iloc[idxs].as_matrix(), axis=0)  # Call as_matrix() so nan is treated as nan in sum!
 			sumDts[i] = np.sum(pcd.sum_dt.iloc[idxs])
 		else:
-			for idx in idxs:
-				dateIdx = int((np.datetime64(pcdDates.iloc[idx]) - T0) / np.timedelta64(1, 'D'))
-				startColIdx = len(pcd.columns) * dateIdx
-				sumDts[i,dateIdx] = pcd.sum_dt.iloc[idx]
-				X[i,startColIdx:startColIdx+len(pcd.columns)] = pcd.iloc[idx]
+			X[i,0:len(pcd.columns)] = np.zeros(len(pcd.columns))
+			sumDts[i] = 0
 		# Now append the demographic features
 		demographics = pc.iloc[usernamesToPcIdxsMap[username]]
 		X[i,NUM_DAYS * len(pcd.columns):] = demographics
@@ -214,6 +204,9 @@ def getXandY (pc, pcd, usernames, T0, Tc, collapseOverTime = False, ignoreFirstW
 		y[i] = usernamesToCertifiedMap[username]
 		if np.isfinite(np.sum(X[i,:])):
 			goodIdxs.append(i)
+	
+	if demographicsOnly:
+		X[:,0:len(pcd.columns)] = 0  # Zero out the non-demographics information
 	return X[goodIdxs,:], Xheur[goodIdxs], y[goodIdxs], np.sum(sumDts[goodIdxs,:], axis=1)
 
 def normalize (trainX, testX):
@@ -263,9 +256,9 @@ def evaluateWithUniformSumDts (y, yhat, sumDts):
 		allYhat += list(yhat[posIdxs]) + list(yhat[negIdxs])
 	return sklearn.metrics.roc_auc_score(allY, allYhat)
 
-def splitAndGetNormalizedFeatures (somePc, somePcd, usernames, T0, Tc):
+def splitAndGetNormalizedFeatures (somePc, somePcd, usernames, T0, Tc, demographicsOnly):
 	# Get features and target values
-	X, Xheur, y, sumDts = getXandY(somePc, somePcd, usernames, T0, Tc, True, False)
+	X, Xheur, y, sumDts = getXandY(somePc, somePcd, usernames, T0, Tc, demographicsOnly)
 	if len(np.nonzero(y == 0)[0]) < MIN_EXAMPLES or len(np.nonzero(y == 1)[0]) < MIN_EXAMPLES:
 		raise ValueError("Too few examples or all one class")
 	# Split into training and testing folds
@@ -278,11 +271,12 @@ def trainMLR (trainX, trainY, testX, testY, mlrReg):
 	baselineModel.fit(trainX, trainY)
 	yhat = baselineModel.predict_proba(testX)[:,1]
 	aucMLR = sklearn.metrics.roc_auc_score(testY, yhat)
-	return aucMLR
+	return aucMLR, (testY, yhat)
 
-def prepareAllData (pc, pcd):
+def prepareAllData (pc, pcd, demographicsOnly):
 	print "Preparing data..."
 	allCourseData = {}
+	#for courseId in set(pcd.keys()).intersection(START_DATES.keys()):  # For each course
 	for courseId in set(pcd.keys()).intersection(START_DATES.keys()):  # For each course
 		print courseId
 		# Restrict analysis to rows of PC dataset relevant to this course
@@ -296,7 +290,7 @@ def prepareAllData (pc, pcd):
 		Tcutoffs = np.arange(T0 + 1*WEEK, Tc, WEEK)
 		for Tcutoff in Tcutoffs:
 			usernames = getRelevantUsers(somePc, Tcutoff)
-			allData = splitAndGetNormalizedFeatures(somePc, somePcd, usernames, T0, Tcutoff)
+			allData = splitAndGetNormalizedFeatures(somePc, somePcd, usernames, T0, Tcutoff, demographicsOnly)
 			allCourseData[courseId].append(allData)
 	print "...done"
 	return allCourseData
@@ -314,24 +308,29 @@ def runExperimentsHeuristic ():
 
 def runExperiments (allCourseData):
 	allAucs = {}
+	allDists = {}
 	for courseId in set(pcd.keys()).intersection(START_DATES.keys()):  # For each course
 		allAucs[courseId] = []
+		allDists[courseId] = []
 		for i, weekData in enumerate(allCourseData[courseId]):
 			(trainX, trainXheur, trainY, testX, testXheur, testY) = weekData
 			global MLR_REG
-			auc = trainMLR(trainX, trainY, testX, testY, MLR_REG)
+			print MLR_REG
+			auc, dist = trainMLR(trainX, trainY, testX, testY, MLR_REG)
 			allAucs[courseId].append(auc)
-	return allAucs
+			allDists[courseId].append(dist)
+	return allAucs, allDists
 
 def trainAllHeuristic ():
 	allAucs = runExperimentsHeuristic()
 	cPickle.dump(allAucs, open("results_heuristic.pkl", "wb"))
 
-def trainAll (allCourseData):
-	global MLR_REG
-	MLR_REG = 1.
-	allAucs = runExperiments(allCourseData)
-	cPickle.dump(allAucs, open("results_prong1.pkl", "wb"))
+def trainAll (allCourseData, demographicsOnly, save=True):
+	allAucs, allDists = runExperiments(allCourseData)
+	if save:
+		cPickle.dump(allAucs, open("results_prong1{}.pkl".format("_demog" if demographicsOnly else ""), "wb"))
+		cPickle.dump(allDists, open("results_prong1_dists.pkl", "wb"))
+	return allAucs
 
 def optimize (allCourseData):
 	MLR_REG_SET = 10. ** np.arange(-5, +6).astype(np.float32)
@@ -339,7 +338,7 @@ def optimize (allCourseData):
 	for paramValue in MLR_REG_SET:
 		global MLR_REG
 		MLR_REG = float(paramValue)
-		allAucs = runExperiments(allCourseData)
+		allAucs, = runExperiments(allCourseData)
 		avgAuc = np.mean(aucs.values())
 		print avgAuc
 		if avgAuc > bestAuc:
@@ -348,12 +347,14 @@ def optimize (allCourseData):
 	print "Accuracy: {} for {}".format(bestAuc, bestParamValue)
 
 if __name__ == "__main__":
+	DEMOGRAPHICS_ONLY = True
 	if 'pcd' not in globals():
 		pcd = loadPersonCourseDayData()
 		pc = loadPersonCourseData()
 	if 'allCourseData' not in globals():
-		allCourseData = prepareAllData(pc, pcd)
+		allCourseData = prepareAllData(pc, pcd, DEMOGRAPHICS_ONLY)
 	#optimize(allCourseData)
-	#trainAll(allCourseData)
+	MLR_REG = 1.
+	allAucs = trainAll(allCourseData, DEMOGRAPHICS_ONLY, save=False)
 
-	trainAllHeuristic()
+	#trainAllHeuristic()
