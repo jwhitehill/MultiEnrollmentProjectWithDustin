@@ -19,6 +19,16 @@ def plotEmpiricalDistributions ():
 			plt.title("{} week {}".format(courseId, weekIdx+1))
 			plt.savefig("{}_week_{}.png".format(courseId.replace("/", "-"), weekIdx+1))
 			#plt.show()
+	
+def computeOverallMedianAccuracy ():
+	resultsCertRepeatedCourse = cPickle.load(open("results_prong1.pkl", "rb"))
+	resultsCertRepeatedCourseDemog = cPickle.load(open("results_prong1_demog.pkl", "rb"))
+	resultsCertHeuristic = cPickle.load(open("results_heuristic.pkl", "rb"))
+	(resultsNextWeek, resultsCert) = cPickle.load(open("results_prong2.pkl", "rb"))
+
+	print "Median accuracy for Approach 1: {}".format(np.median(np.hstack(resultsCertRepeatedCourse.values())))
+	print "Median accuracy for Approach 2: {}".format(np.median(np.hstack(resultsCert.values())))
+	print "Median accuracy for Approach 3: {}".format(np.median(np.hstack(resultsCertHeuristic.values())))
 
 def plotAccuracyCurves ():
 	resultsCertRepeatedCourse = cPickle.load(open("results_prong1.pkl", "rb"))
@@ -74,5 +84,6 @@ def plotAccuracyCurves ():
 		#plt.show()
 
 if __name__ == "__main__":
-	plotAccuracyCurves()
-	plotEmpiricalDistributions()
+	#plotAccuracyCurves()
+	#plotEmpiricalDistributions()
+	computeOverallMedianAccuracy()

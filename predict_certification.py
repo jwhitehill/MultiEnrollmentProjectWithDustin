@@ -347,7 +347,7 @@ def optimize (allCourseData):
 	print "Accuracy: {} for {}".format(bestAuc, bestParamValue)
 
 if __name__ == "__main__":
-	DEMOGRAPHICS_ONLY = True
+	DEMOGRAPHICS_ONLY = False
 	if 'pcd' not in globals():
 		pcd = loadPersonCourseDayData()
 		pc = loadPersonCourseData()
