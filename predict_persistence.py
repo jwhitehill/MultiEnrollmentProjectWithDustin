@@ -17,27 +17,32 @@ def computeCourseDates (courseId):
 
 def runExperiments (allCourseData):
 	allAucs = {}
+	allDists = {}
 	allAucsCert = {}
 	for courseId in set(pcd.keys()).intersection(START_DATES.keys()):  # For each course
 		#print courseId
 		allAucs[courseId] = []
 		allAucsCert[courseId] = []
+		allDists[courseId] = []
 		for i, weekData in enumerate(allCourseData[courseId]):
 			# Find start date T0 and cutoff date Tc
 			(trainX, trainY, trainYcert, testX, testY, testYcert) = weekData
-			auc, _ = trainMLR(trainX, trainY, testX, testY, 1.)
-			aucCert, _ = trainMLR(trainX, trainY, testX, testYcert, 1.)
+			auc, dist = trainMLR(trainX, trainY, testX, testY, 1.)
+			#aucCert, _ = trainMLR(trainX, trainY, testX, testYcert, 1.)
+			aucCert = float('nan')
 			#print "To predict week {}: {}".format(i+3, auc)
+			allDists[courseId].append(dist)
 			allAucs[courseId].append(auc)
 			allAucsCert[courseId].append(aucCert)
 		#print
-	return allAucs, allAucsCert
+	return allAucs, allAucsCert, allDists
 
 def trainAll (allCourseData):
 	global MLR_REG
 	MLR_REG = 1.
 	results = runExperiments(allCourseData)
 	cPickle.dump(results, open("results_prong2.pkl", "wb"))
+	return results
 
 def optimize (allCourseData):
 	MLR_REG_SET = 10. ** np.arange(-5, +6).astype(np.float32)
@@ -178,4 +183,5 @@ if __name__ == "__main__":
 	if 'allCourseData' not in globals():
 		allCourseData = prepareAllData(pc, pcd, NORMALIZE)
 	#optimize(allCourseData)
-	trainAll(allCourseData)
+	results = trainAll(allCourseData)
+	print results

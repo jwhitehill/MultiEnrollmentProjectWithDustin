@@ -22,16 +22,21 @@ START_DATES = {
 	'HarvardX/SW12.8x/3T2014': np.datetime64('2014-10-09'),
 	'HarvardX/SW12.9x/3T2014': np.datetime64('2014-11-20'),
 	'HarvardX/SW12.10x/1T2015': np.datetime64('2015-01-08'),
-	#'HarvardX/SW12.1x/2015': np.datetime64('2015-10-27'),
-	#'HarvardX/SW12.2x/2015': np.datetime64('2015-10-27'),
-	#'HarvardX/SW12.3x/2015': np.datetime64('2015-10-27'),
-	#'HarvardX/SW12.4x/2015': np.datetime64('2015-10-27'),
-	#'HarvardX/SW12.5x/2015': np.datetime64('2015-10-27'),
-	#'HarvardX/SW12.6x/2015': np.datetime64('2015-11-20'),
-	#'HarvardX/SW12.7x/2015': np.datetime64('2015-11-20'),
-	#'HarvardX/SW12.8x/2015': np.datetime64('2015-11-20'),
+	'HarvardX/PH231x/1T2016': np.datetime64('2016-01-25'),
+	'HarvardX/PH557/3T2015': np.datetime64('2015-12-03'),
+	'HarvardX/PH525.4x/3T2015': np.datetime64('2016-01-15'),
+	'HarvardX/MUS24.3x/1T2016': np.datetime64('2016-01-21'),
+	#'HarvardX/PH556/2015T3': np.datetime64('2016-01-20'),
+	'HarvardX/SW12.1x/2015': np.datetime64('2015-10-27'),
+	'HarvardX/SW12.2x/2015': np.datetime64('2015-10-27'),
+	'HarvardX/SW12.3x/2015': np.datetime64('2015-10-27'),
+	'HarvardX/SW12.4x/2015': np.datetime64('2015-10-27'),
+	'HarvardX/SW12.5x/2015': np.datetime64('2015-10-27'),
+	'HarvardX/SW12.6x/2015': np.datetime64('2015-11-20'),
+	'HarvardX/SW12.7x/2015': np.datetime64('2015-11-20'),
+	'HarvardX/SW12.8x/2015': np.datetime64('2015-11-20'),
 	#'HarvardX/SW12.9x/2015': np.datetime64('2015-11-20'),
-	#'HarvardX/SW12.10x/2015': np.datetime64('2015-11-20'),
+	'HarvardX/SW12.10x/2015': np.datetime64('2015-11-20'),
 }
 
 # Dates corresponding to when students can earn 0.5 * number of points necessary for certification
@@ -47,18 +52,24 @@ PREDICTION_DATES_0_5 = {
 	'HarvardX/SW12.8x/3T2014': np.datetime64('2014-10-24 04:00:00'),
 	'HarvardX/SW12.9x/3T2014': np.datetime64('2014-12-05 05:00:00'),
 	'HarvardX/SW12.10x/1T2015': np.datetime64('2015-01-29 20:00:00'),
-	#'HarvardX/SW12.1x/2015': np.datetime64('2015-10-27 14:00:00'),
-	#'HarvardX/SW12.2x/2015': np.datetime64('2015-10-27 14:00:00'),
-	#'HarvardX/SW12.3x/2015': np.datetime64('2015-10-27 14:00:00'),
-	#'HarvardX/SW12.4x/2015': np.datetime64('2015-10-27 14:00:00'),
-	#'HarvardX/SW12.5x/2015': np.datetime64('2015-10-27 14:00:00'),
-	#'HarvardX/SW12.6x/2015': np.datetime64('2015-11-20'),
-	#'HarvardX/SW12.7x/2015': np.datetime64('2015-11-20'),
-	#'HarvardX/SW12.8x/2015': np.datetime64('2015-11-20'),
+	'HarvardX/PH231x/1T2016': np.datetime64('2016-02-29'),
+	'HarvardX/PH557/3T2015': np.datetime64('2016-02-29'),
+	'HarvardX/PH525.4x/3T2015': np.datetime64('2016-02-29'),
+	'HarvardX/MUS24.3x/1T2016': np.datetime64('2016-02-29'),
+	#'HarvardX/PH556/2015T3': np.datetime64('2016-02-29'),
+	'HarvardX/SW12.1x/2015': np.datetime64('2015-10-27 14:00:00'),
+	'HarvardX/SW12.2x/2015': np.datetime64('2015-10-27 14:00:00'),
+	'HarvardX/SW12.3x/2015': np.datetime64('2015-10-27 14:00:00'),
+	'HarvardX/SW12.4x/2015': np.datetime64('2015-10-27 14:00:00'),
+	'HarvardX/SW12.5x/2015': np.datetime64('2015-10-27 14:00:00'),
+	'HarvardX/SW12.6x/2015': np.datetime64('2015-11-20'),
+	'HarvardX/SW12.7x/2015': np.datetime64('2015-11-20'),
+	'HarvardX/SW12.8x/2015': np.datetime64('2015-11-20'),
 	#'HarvardX/SW12.9x/2015': np.datetime64('2030-01-01'),
-	#'HarvardX/SW12.10x/2015': np.datetime64('2015-11-20')
+	'HarvardX/SW12.10x/2015': np.datetime64('2015-11-20')
 }
 
+	
 # Dates corresponding to when students can earn 1.0 * number of points necessary for certification
 PREDICTION_DATES_1_0 = {
 	'HarvardX/SW25x/1T2014':      np.datetime64('2014-04-02 00:00:00'),
@@ -71,7 +82,22 @@ PREDICTION_DATES_1_0 = {
 	'HarvardX/SW12.7x/3T2014':    np.datetime64('2014-09-25 20:00:00'),
 	'HarvardX/SW12.8x/3T2014':    np.datetime64('2014-11-06 20:00:00'),
 	'HarvardX/SW12.9x/3T2014':    np.datetime64('2014-12-19 02:30:00'),
-	'HarvardX/SW12.10x/1T2015':   np.datetime64('2015-02-27 02:00:00')
+	'HarvardX/SW12.10x/1T2015':   np.datetime64('2015-02-27 02:00:00'),
+	'HarvardX/PH231x/1T2016': np.datetime64('2016-02-29'),
+	'HarvardX/PH557/3T2015': np.datetime64('2016-02-29'),
+	'HarvardX/PH525.4x/3T2015': np.datetime64('2016-02-29'),
+	'HarvardX/MUS24.3x/1T2016': np.datetime64('2016-02-29'),
+	#'HarvardX/PH556/2015T3': np.datetime64('2016-02-29'),
+	'HarvardX/SW12.1x/2015': np.datetime64('2015-10-27 14:00:00'),
+	'HarvardX/SW12.2x/2015': np.datetime64('2015-10-27 14:00:00'),
+	'HarvardX/SW12.3x/2015': np.datetime64('2015-10-27 14:00:00'),
+	'HarvardX/SW12.4x/2015': np.datetime64('2015-10-27 14:00:00'),
+	'HarvardX/SW12.5x/2015': np.datetime64('2015-10-27 14:00:00'),
+	'HarvardX/SW12.6x/2015': np.datetime64('2015-11-20'),
+	'HarvardX/SW12.7x/2015': np.datetime64('2015-11-20'),
+	'HarvardX/SW12.8x/2015': np.datetime64('2015-11-20'),
+	#'HarvardX/SW12.9x/2015': np.datetime64('2030-01-01'),
+	'HarvardX/SW12.10x/2015': np.datetime64('2015-11-20')
 }
 
 # For each course:
@@ -82,15 +108,14 @@ PREDICTION_DATES_1_0 = {
 #	Compare to baseline predictors: P(certification | timeSinceLastAction) = logistic(- timeSinceLastAction)
 
 def loadPersonCourseData ():
-	d = pandas.io.parsers.read_csv('person_course_HarvardX_2015-11-11-051632.csv.gz', compression='gzip')
+	#d = pandas.io.parsers.read_csv('/nfs/home/J/jwhitehill/shared_space/ci3_jwaldo/BigQuery/person_course_HarvardX_2015-11-11-051632.csv')
+	d = pandas.io.parsers.read_csv('/nfs/home/J/jwhitehill/shared_space/ci3_charlesriverx/HarvardX/CoursesAll/person_course.csv.gz', compression=None)
 	d = convertTimes(d, 'start_time')
 	return d
 
 def loadPersonCourseDayData ():
 	# Combine datasets
-	d = pandas.io.parsers.read_csv('course_report_latest-person_course_day_SW12x.csv.gz', compression='gzip')
-	e = pandas.io.parsers.read_csv('pcd_SW25x_1T2014.csv')
-	d = pandas.concat((d, e))
+	d = pandas.io.parsers.read_csv('/nfs/home/J/jwhitehill/shared_space/ci3_charlesriverx/HarvardX/CoursesAll/person_course_day.csv.gz', compression=None)
 
 	d = convertTimes(d, 'date')
 	courseIds = np.unique(d.course_id)
@@ -198,7 +223,7 @@ def getXandY (pc, pcd, usernames, T0, Tc, demographicsOnly):
 		# "Heuristic" predictor -- whether the student's last event time is before/after the first week of the course
 		lastEvent = usernamesToLastEventMap[username]
 		if (lastEvent != 'nan') and (lastEvent == lastEvent):  # np.isfinite doesn't work for dates, so we have to check if it equals itself
-			Xheur[i] = np.datetime64(lastEvent) > (T0 + np.timedelta64(7*NUM_WEEKS_HEURISTIC, 'D'))  # Did they persist beyond 2 weeks into course?
+			Xheur[i] = np.datetime64(lastEvent[0:10]) > (T0 + np.timedelta64(7*NUM_WEEKS_HEURISTIC, 'D'))  # Did they persist beyond 2 weeks into course?
 		else:
 			Xheur[i] = 0
 		y[i] = usernamesToCertifiedMap[username]
@@ -287,7 +312,7 @@ def prepareAllData (pc, pcd, demographicsOnly):
 		T0, Tc = computeCourseDates(courseId)
 		allCourseData[courseId] = []
 
-		Tcutoffs = np.arange(T0 + 1*WEEK, Tc, WEEK)
+		Tcutoffs = np.arange(T0 + 1*WEEK, Tc+np.timedelta64(1, 'D'), WEEK)
 		for Tcutoff in Tcutoffs:
 			usernames = getRelevantUsers(somePc, Tcutoff)
 			allData = splitAndGetNormalizedFeatures(somePc, somePcd, usernames, T0, Tcutoff, demographicsOnly)
@@ -347,7 +372,7 @@ def optimize (allCourseData):
 	print "Accuracy: {} for {}".format(bestAuc, bestParamValue)
 
 if __name__ == "__main__":
-	DEMOGRAPHICS_ONLY = True
+	DEMOGRAPHICS_ONLY = False
 	if 'pcd' not in globals():
 		pcd = loadPersonCourseDayData()
 		pc = loadPersonCourseData()
@@ -355,6 +380,6 @@ if __name__ == "__main__":
 		allCourseData = prepareAllData(pc, pcd, DEMOGRAPHICS_ONLY)
 	#optimize(allCourseData)
 	MLR_REG = 1.
-	allAucs = trainAll(allCourseData, DEMOGRAPHICS_ONLY, save=False)
+	allAucs = trainAll(allCourseData, DEMOGRAPHICS_ONLY, save=True)
 
 	#trainAllHeuristic()
