@@ -24,7 +24,7 @@ def computeOverallMedianAccuracy ():
 	resultsCertRepeatedCourse = cPickle.load(open("results_prong1.pkl", "rb"))
 	resultsCertRepeatedCourseDemog = cPickle.load(open("results_prong1_demog.pkl", "rb"))
 	resultsCertHeuristic = cPickle.load(open("results_heuristic.pkl", "rb"))
-	(resultsNextWeek, resultsCert) = cPickle.load(open("results_prong2.pkl", "rb"))
+	(resultsNextWeek, usernames, resultsCert) = cPickle.load(open("results_prong2.pkl", "rb"))
 
 	print "Median accuracy for Approach 1: {}".format(np.median(np.hstack(resultsCertRepeatedCourse.values())))
 	print "Median accuracy for Approach 2: {}".format(np.median(np.hstack(resultsCert.values())))
@@ -34,7 +34,7 @@ def plotAccuracyCurves ():
 	resultsCertRepeatedCourse = cPickle.load(open("results_prong1.pkl", "rb"))
 	resultsCertRepeatedCourseDemog = cPickle.load(open("results_prong1_demog.pkl", "rb"))
 	resultsCertHeuristic = cPickle.load(open("results_heuristic.pkl", "rb"))
-	(resultsNextWeek, resultsCert) = cPickle.load(open("results_prong2.pkl", "rb"))
+	(resultsNextWeek, usernames, resultsCert) = cPickle.load(open("results_prong2.pkl", "rb"))
 
 	for courseId in resultsCertRepeatedCourse.keys():
 		plt.clf()

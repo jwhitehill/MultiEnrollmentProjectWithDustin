@@ -86,6 +86,10 @@ def loadPersonCourseData ():
 	d = convertTimes(d, 'start_time')
 	return d
 
+def loadPrecourseSurveyData ():
+	d = pandas.io.parsers.read_csv('person_course_survey.csv.gz', compression='gzip')
+	return d
+
 def loadPersonCourseDayData ():
 	# Combine datasets
 	d = pandas.io.parsers.read_csv('course_report_latest-person_course_day_SW12x.csv.gz', compression='gzip')
