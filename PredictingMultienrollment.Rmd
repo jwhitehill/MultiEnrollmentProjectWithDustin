@@ -76,7 +76,7 @@ Introduction
 The goal of this project was to assess whether statistically significant patterns can be identified of which kinds of learners -- in terms of easily queryable attributes such as age, gender, continent-of-origin, and level of education -- tend to participate in multiple courses, possibly within different disciplines (humanities, STEM, etc.). In particular, we computed histograms of the numbers of courses in which learners participate, organized by discipline. We also fit logistic regression models  to determine which kinds of learners tended to enroll in more than 1 course in each discipline.
 
 ## Methods
-We organized courses into 4 different disciplines -- Health Sciences, Humanities, STEM, and Social Sciences -- as well as a "catch-all" discipline containing all courses. We were interested in which kinds of learners *participated*, rather than just *registered*, in different courses. (Recall from the HarvardX Year 2 report that *participation* requires clicking into the MOOC courseware at least once after registering for each course.) Hence, we analyzed only and all the (person x course) data (extracted from the person-course dataset from November 11, 2015) for participation events.
+We organized courses into 4 different disciplines -- Health Sciences, Humanities, STEM, and Social Sciences -- as well as a "catch-all" discipline containing all courses. We were interested in which kinds of learners *participated*, rather than just *registered*, in different courses. (Recall from the HarvardX Year 2 report that *participation* requires clicking into the MOOC courseware at least once after registering for each course.) Hence, we analyzed only the (person x course) data (extracted from the person-course dataset from November 11, 2015) for *participation* events. Since we were interested in associating participation with certain demographic features, we also *excluded* all participants for whom level-of-education, continent, age, or gender information was not available.
 
 For each discipline, we fit two logistic regression models: (a) one model to predict whether a student will take *at least 1 course* in the discipline; and (b) one model to predict whether a student will take *more than 1 course* in the discipline. For both models, we used the following covariates: the student's continent-of-origin, age (broken down into 5-year intervals from 10-60), level of education, and gender.
 
@@ -84,10 +84,10 @@ For the catch-all "all" discipline, since all students in our dataset participat
 
 ## Synopsis
 * The vast majority of learners took *4 or fewer* courses.
-* There were statistically significant correlations between *age* and participation in multiple courses;
-  however, the *direction* of the correlation differed by *discipline*.
+* There were statistically significant correlations between *age* and participation in multiple courses; however, the *direction* of the correlation differed by *discipline*. For example, older students are *less* likely to participate in at least 1 STEM course than younger students. On the other hand, older students are *more* likely to participate in at least 1 humanities course than younger students.
 * Within each discipline, very few covariates were statistically significantly correlated
   with taking *more than 1* course.
+* This report can easily be re-generated with the most up-to-date data.
 
 Histograms of course enrollment
 ===============================

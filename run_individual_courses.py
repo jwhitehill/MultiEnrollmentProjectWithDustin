@@ -5,7 +5,7 @@ import numpy as np
 import pandas
 import sklearn.metrics
 
-NUM_EPOCHS = 5000
+NUM_EPOCHS = 10000
 BATCH_SIZE = 100
 
 def mySolveLS (A, b):
@@ -79,14 +79,15 @@ def runNN (train_x, train_y, test_x, test_y, numHidden, numEpochs = NUM_EPOCHS):
 		b1 = makeVariable([numHidden], stddev=0.5, wd=1e1, name="b1")
 		W2 = makeVariable([numHidden,train_y.shape[1]], stddev=0.5, wd=1e0, name="W2")
 
-		level1 = tf.nn.relu(tf.matmul(x,W1) + b1)
+		#level1 = tf.nn.relu(tf.matmul(x,W1) + b1)
+		level1 = tf.matmul(x,W1) + b1
 		y = tf.nn.softmax(tf.matmul(level1,W2))
 
 		cross_entropy = -tf.reduce_mean(y_*tf.log(tf.clip_by_value(y,1e-10,1.0)), name='cross_entropy')
 		tf.add_to_collection('losses', cross_entropy)
 		total_loss = tf.add_n(tf.get_collection('losses'), name='total_loss')
 
-		train_step = tf.train.MomentumOptimizer(learning_rate=.001, momentum=0.1).minimize(total_loss)
+		train_step = tf.train.MomentumOptimizer(learning_rate=.001, momentum=0.01).minimize(total_loss)
 		#train_step = tf.train.AdamOptimizer(learning_rate=.001).minimize(total_loss)
 
 		session.run(tf.initialize_all_variables())
@@ -200,7 +201,7 @@ def runLLL_NN (all_train_x, all_train_y, all_test_x, all_test_y, numHidden, cour
 		ys = []
 		for i in range(n):
 			level1s.append(tf.matmul(xs[i],W1) + b1)
-			W2s.append(makeVariable([numHidden,all_train_y[i].shape[1]], stddev=0.5, wd=1e3, name="W2_{}".format(i), collectionNames=["losses_{}".format(i)]))
+			W2s.append(makeVariable([numHidden,all_train_y[i].shape[1]], stddev=0.5, wd=1e1, name="W2_{}".format(i), collectionNames=["losses_{}".format(i)]))
 			level2s.append(tf.matmul(level1s[i],W2s[i]))
 			#level2s.append(tf.matmul(tf.nn.relu(level1s[i]), W2s[i]))
 			ys.append(tf.nn.softmax(level2s[i]))
@@ -209,12 +210,14 @@ def runLLL_NN (all_train_x, all_train_y, all_test_x, all_test_y, numHidden, cour
 		cross_entropies = []
 		total_losses = []
 		optimizers = []
+		global_steps = []
 		for i in range(n):
 			cross_entropies.append(-tf.reduce_mean(ys_[i]*tf.log(tf.clip_by_value(ys[i],1e-10,1.0)), name="cross_entropy_{}".format(i)))
 			tf.add_to_collection("losses_{}".format(i), cross_entropies[i])
 			total_losses.append(tf.add_n(tf.get_collection("losses_{}".format(i)), name="total_losses_{}".format(i)))
-			optimizers.append(tf.train.AdamOptimizer(learning_rate=.001, beta1=.9, beta2=.9).minimize(total_losses[i]))
-			#optimizers.append(tf.train.MomentumOptimizer(learning_rate=.001, momentum=0.1).minimize(total_losses[i]))
+			global_steps.append(tf.Variable(0, trainable=False))
+			learning_rate = tf.train.exponential_decay(0.001, global_steps[i], 1000, 0.98)
+			optimizers.append(tf.train.MomentumOptimizer(learning_rate, momentum=0.1).minimize(total_losses[i]))
 
 		session.run(tf.initialize_all_variables())
 		for i in range(NUM_EPOCHS):
@@ -239,9 +242,11 @@ def loadLLLData ():
 		courseIds = []
 		# Pick some courses
 		for courseId in np.unique(d.course_id):
-			if "2016" not in courseId:
+			if len(np.nonzero(d.course_id == courseId)[0]) > 10000 and\
+			   "CS50" not in courseId and\
+			   "2016" not in courseId:
 				courseIds.append(courseId)
-		courseIds = courseIds[0:10]
+		courseIds = courseIds[0:30]
 
 		# Initialize training and testing matrices
 		global all_train_x, all_train_y, all_test_x, all_test_y
@@ -284,11 +289,11 @@ def runLLLExperiments ():
 
 	for numHidden in range(3, 6):
 		print "numHidden = {}".format(numHidden)
-		print "LLL:"
-		runLLL_NN(all_train_x, all_train_y, all_test_x, all_test_y, numHidden, courseIds)
-		#print "Regular NN:"
-		#for j in range(len(courseIds)):
-		#	runNN(all_train_x[j], all_train_y[j], all_test_x[j], all_test_y[j], numHidden)
+		#print "LLL:"
+		#runLLL_NN(all_train_x, all_train_y, all_test_x, all_test_y, numHidden, courseIds)
+		print "Regular NN:"
+		for j in range(len(courseIds)):
+			runNN(all_train_x[j], all_train_y[j], all_test_x[j], all_test_y[j], numHidden)
 
 def runNNExperiments ():
 	#COURSE_ID = "HarvardX/SW12.5x/2T2014"
