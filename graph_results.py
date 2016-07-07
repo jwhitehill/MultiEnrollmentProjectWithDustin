@@ -83,7 +83,25 @@ def plotAccuracyCurves ():
 		plt.savefig("{}_graph.png".format(courseId.replace("/", "-")))
 		#plt.show()
 
+def plotPH231xPredictions ():
+	results = cPickle.load(open('results_prong2.pkl', 'rb'))
+	allDists = results[2]
+	COURSE_ID = 'HarvardX/PH231x/1T2016'
+	dists = allDists[COURSE_ID]
+	for weekIdx in range(len(dists)):
+		yhat = dists[weekIdx][1]
+		bins = np.arange(0, 1.1, 0.1)
+
+		plt.clf()
+		plt.hist(yhat, bins, label='Estimated probability', color='b', hatch='/')
+		plt.legend(loc='upper right')
+		plt.xlabel("Probability of certification")
+		plt.ylabel("Number of students")
+		plt.title("{} week {}".format(COURSE_ID, weekIdx+3))
+		plt.savefig("{}_week_{}_predictions.png".format(COURSE_ID.replace("/", "-"), weekIdx+1))
+
 if __name__ == "__main__":
 	#plotAccuracyCurves()
 	#plotEmpiricalDistributions()
+	plotPH231xPredictions()
 	computeOverallMedianAccuracy()

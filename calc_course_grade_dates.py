@@ -3,7 +3,7 @@ import numpy as np
 import pandas
 
 DIR = "/nfs/home/J/jwhitehill/shared_space/ci3_jwaldo/dseaton/For_Jake"
-FRAC = 0.5
+FRAC = 1.0
 
 def computeDate (f, frac):
 	d = pandas.read_csv(f)
@@ -20,6 +20,6 @@ if __name__ == "__main__":
 	for f in files:
 		if ".csv" in f:
 			idx = f.index("_ideal_grade.csv")
-			course = f[0:idx].replace("__", "/")
+			course = f[0:idx].replace("__", "/").replace("_", ".")
 			filename = DIR + "/" + f
 			courseDateMap[course] = computeDate(filename, FRAC)

@@ -24,15 +24,21 @@ def computeCourseDates (courseId):
 
 def runExperiments (allCourseData, withPrecourseSurvey = False):
 	allAucs = {}
+<<<<<<< HEAD
 	allUsernamesAndPredictions = {}
+=======
+	allDists = {}
+>>>>>>> 3324957bcb4ebc67aead54af925e0721098d1627
 	allAucsCert = {}
 	for courseId in set(pcd.keys()).intersection(START_DATES.keys()):  # For each course
 		#print courseId
 		allAucs[courseId] = []
 		allUsernamesAndPredictions[courseId] = []
 		allAucsCert[courseId] = []
+		allDists[courseId] = []
 		for i, weekData in enumerate(allCourseData[courseId]):
 			# Find start date T0 and cutoff date Tc
+<<<<<<< HEAD
 			(trainX, trainY, trainYcert, testX, testY, testYcert, usernames) = weekData
 			if not withPrecourseSurvey:
 				# Trim off the last feature (whether student submitted precourse survey or not)
@@ -41,18 +47,30 @@ def runExperiments (allCourseData, withPrecourseSurvey = False):
 			auc, (_, testYhat) = trainMLR(trainX, trainY, testX, testY, 1.)
 			print "{}: {}".format(courseId, auc)
 			aucCert, _ = trainMLR(trainX, trainY, testX, testYcert, 1.)
+=======
+			(trainX, trainY, trainYcert, testX, testY, testYcert) = weekData
+			auc, dist = trainMLR(trainX, trainY, testX, testY, 1.)
+			#aucCert, _ = trainMLR(trainX, trainY, testX, testYcert, 1.)
+			aucCert = float('nan')
+>>>>>>> 3324957bcb4ebc67aead54af925e0721098d1627
 			#print "To predict week {}: {}".format(i+3, auc)
+			allDists[courseId].append(dist)
 			allAucs[courseId].append(auc)
 			allUsernamesAndPredictions[courseId].append((usernames, testYhat))
 			allAucsCert[courseId].append(aucCert)
 		#print
+<<<<<<< HEAD
 	return allAucs, allUsernamesAndPredictions, allAucsCert
+=======
+	return allAucs, allAucsCert, allDists
+>>>>>>> 3324957bcb4ebc67aead54af925e0721098d1627
 
 def trainAll (allCourseData, withPrecourseSurvey):
 	global MLR_REG
 	MLR_REG = 1.
 	results = runExperiments(allCourseData, withPrecourseSurvey)
 	cPickle.dump(results, open("results_prong2.pkl", "wb"))
+	return results
 
 def optimize (allCourseData):
 	MLR_REG_SET = 10. ** np.arange(-5, +6).astype(np.float32)
@@ -204,4 +222,9 @@ if __name__ == "__main__":
 	if 'allCourseData' not in globals():
 		allCourseData = prepareAllData(pc, pcd, survey, NORMALIZE)
 	#optimize(allCourseData)
+<<<<<<< HEAD
 	trainAll(allCourseData, True)
+=======
+	results = trainAll(allCourseData)
+	print results
+>>>>>>> 3324957bcb4ebc67aead54af925e0721098d1627
