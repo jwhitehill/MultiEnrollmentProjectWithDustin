@@ -1,14 +1,14 @@
 import util
 import cPickle
-import quantify
 import pandas
 import math
 import numpy as np
 import sklearn.metrics
 import sklearn.linear_model
 import scipy.stats
+from common import loadData, getCourseStartAndEndDates
 from predict_certification import loadPersonCourseData, loadPersonCourseDayData, loadPrecourseSurveyData, \
-                                convertTimes, getRelevantUsers, convertYoB, \
+                                convertTimes, getRelevantUsers, convertYoB, computeCourseDates, \
 				trainMLR, START_DATES, MIN_EXAMPLES, WEEK, PREDICTION_DATES_1_0 
 
 # Converts each column of the specified matrix into percentiles (over the values
@@ -17,53 +17,35 @@ def percentilize (X):
         for i in range(X.shape[1]):
                 X[:,i] = scipy.stats.rankdata(X[:,i])/float(X.shape[0])
 
-def computeCourseDates (courseId):
-	T0 = START_DATES[courseId]
-	Tc_1_0 = PREDICTION_DATES_1_0[courseId]
-	return T0, Tc_1_0
-
 def runExperiments (allCourseData, withPrecourseSurvey = False):
 	allAucs = {}
-<<<<<<< HEAD
 	allUsernamesAndPredictions = {}
-=======
-	allDists = {}
->>>>>>> 3324957bcb4ebc67aead54af925e0721098d1627
 	allAucsCert = {}
-	for courseId in set(pcd.keys()).intersection(START_DATES.keys()):  # For each course
-		#print courseId
+	for courseId in set(allCourseData.keys()).intersection(START_DATES.keys()):  # For each course
+		print courseId
 		allAucs[courseId] = []
 		allUsernamesAndPredictions[courseId] = []
 		allAucsCert[courseId] = []
-		allDists[courseId] = []
 		for i, weekData in enumerate(allCourseData[courseId]):
 			# Find start date T0 and cutoff date Tc
-<<<<<<< HEAD
 			(trainX, trainY, trainYcert, testX, testY, testYcert, usernames) = weekData
 			if not withPrecourseSurvey:
 				# Trim off the last feature (whether student submitted precourse survey or not)
 				trainX = trainX[:, 0:-1]
 				testX = testX[:, 0:-1]
-			auc, (_, testYhat) = trainMLR(trainX, trainY, testX, testY, 1.)
+
+			if (len(set(testY)) < 2) or (len(set(testYcert)) < 2):
+				print "Skipping..."
+				continue
+			_, auc, (_, testYhat) = trainMLR(trainX, trainY, testX, testY, 1.)
 			print "{}: {}".format(courseId, auc)
-			aucCert, _ = trainMLR(trainX, trainY, testX, testYcert, 1.)
-=======
-			(trainX, trainY, trainYcert, testX, testY, testYcert) = weekData
-			auc, dist = trainMLR(trainX, trainY, testX, testY, 1.)
-			#aucCert, _ = trainMLR(trainX, trainY, testX, testYcert, 1.)
-			aucCert = float('nan')
->>>>>>> 3324957bcb4ebc67aead54af925e0721098d1627
+			_, aucCert, _ = trainMLR(trainX, trainY, testX, testYcert, 1.)
 			#print "To predict week {}: {}".format(i+3, auc)
-			allDists[courseId].append(dist)
 			allAucs[courseId].append(auc)
 			allUsernamesAndPredictions[courseId].append((usernames, testYhat))
 			allAucsCert[courseId].append(aucCert)
 		#print
-<<<<<<< HEAD
 	return allAucs, allUsernamesAndPredictions, allAucsCert
-=======
-	return allAucs, allAucsCert, allDists
->>>>>>> 3324957bcb4ebc67aead54af925e0721098d1627
 
 def trainAll (allCourseData, withPrecourseSurvey):
 	global MLR_REG
@@ -183,48 +165,42 @@ def extractFeaturesAndTargets (somePc, somePcd, someSurvey, usernames, T0, Tc, n
 		raise ValueError("Test: Too few examples or all one class")
 	return trainX, trainY, trainYcert, testX, testY, testYcert, usernames
 
-def prepareAllData (pc, pcd, survey, normalize):
+def prepareAllData (startDates, endDates, normalize):
 	print "Preparing data..."
 	allCourseData = {}
-	for courseId in set(pcd.keys()).intersection(START_DATES.keys()):  # For each course
-		print courseId
-		# Restrict analysis to rows of PC dataset relevant to this course
-		idxs = np.nonzero(pc.course_id == courseId)[0]
-		somePc = pc.iloc[idxs]
-		idxs = np.nonzero(pcd[courseId].course_id == courseId)[0]
-		somePcd = pcd[courseId].iloc[idxs]
-		idxs = np.nonzero(survey.course_id == courseId)[0]
-		someSurvey = survey.iloc[idxs]
+	for courseId in set(startDates.keys()).intersection(START_DATES.keys()):  # For each course
+		# Load data for this course
+		print "Loading {}...".format(courseId)
+		try:
+			somePc, someSurvey, somePcd = loadData(courseId)
+			T0, Tc = computeCourseDates(courseId, startDates)
+			allCourseData[courseId] = []
+			print "...done"
 
-		T0, Tc = computeCourseDates(courseId)
-		allCourseData[courseId] = []
-		# We need at least 3 weeks' worth of data to both train and test the model.
-		# We use the first 2 weeks' data to train a model (labels are determined by week 2, and
-		# features are extracted from week 1). But then to *evaluate* that model, we need
-		# another (3rd) week.
-		Tcutoffs = np.arange(T0 + 3*WEEK, Tc, WEEK)
-		print courseId, Tcutoffs
-		for Tcutoff in Tcutoffs:
-			# The users that we train/test on must have entered the course by the end of the
-			# *first* week of the last 3 weeks in the time range. Hence, we subtract 2 weeks.
-			usernames = getRelevantUsers(somePc, Tcutoff - 2*WEEK)
-			allData = extractFeaturesAndTargets(somePc, somePcd, someSurvey, usernames, T0, Tcutoff, normalize)
-			allCourseData[courseId].append(allData)
+			# We need at least 3 weeks' worth of data to both train and test the model.
+			# We use the first 2 weeks' data to train a model (labels are determined by week 2, and
+			# features are extracted from week 1). But then to *evaluate* that model, we need
+			# another (3rd) week.
+			Tcutoffs = np.arange(T0 + 3*WEEK, Tc, WEEK)
+			print courseId, Tcutoffs
+			for Tcutoff in Tcutoffs:
+				# The users that we train/test on must have entered the course by the end of the
+				# *first* week of the last 3 weeks in the time range. Hence, we subtract 2 weeks.
+				usernames = getRelevantUsers(somePc, Tcutoff - 2*WEEK)
+				allData = extractFeaturesAndTargets(somePc, somePcd, someSurvey, usernames, T0, Tcutoff, normalize)
+				allCourseData[courseId].append(allData)
+		except (IOError, ValueError):
+			print "Skipping"
+			continue
 	print "...done"
 	return allCourseData
 
 if __name__ == "__main__":
 	NORMALIZE = True
-	if 'pcd' not in globals():
-		pcd = loadPersonCourseDayData()
-		pc = loadPersonCourseData()
-		survey = loadPrecourseSurveyData()
+	if 'startDates' not in globals():
+		startDates, endDates = getCourseStartAndEndDates()
 	if 'allCourseData' not in globals():
-		allCourseData = prepareAllData(pc, pcd, survey, NORMALIZE)
+		allCourseData = prepareAllData(startDates, endDates, NORMALIZE)
 	#optimize(allCourseData)
-<<<<<<< HEAD
-	trainAll(allCourseData, True)
-=======
-	results = trainAll(allCourseData)
+	results = trainAll(allCourseData, True)
 	print results
->>>>>>> 3324957bcb4ebc67aead54af925e0721098d1627
