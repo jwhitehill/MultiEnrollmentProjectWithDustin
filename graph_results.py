@@ -39,6 +39,9 @@ def printAccuracies ():
 		print courseId, someResultsCert
 
 def plotAggregateAccuracyCurves ():
+	def myMean (x):
+		return np.mean(x[np.nonzero(isfinite(x))[0]])
+
 	def reverse (x):
 		return x[-1::-1]
 
@@ -53,7 +56,7 @@ def plotAggregateAccuracyCurves ():
 		for i in weeks:
 			idxs = np.nonzero(lengths > i)[0]
 			if len(idxs) >= MIN_DATA:
-				vals.append(np.mean([ reverse(listOfLists[j])[i] for j in idxs ]))
+				vals.append(myMean([ reverse(listOfLists[j])[i] for j in idxs ]))
 				times.append(weeks[i])
 		return -1 * np.array(reverse(times)), np.array(reverse(vals))
 

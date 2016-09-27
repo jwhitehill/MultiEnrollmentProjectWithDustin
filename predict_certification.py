@@ -359,20 +359,20 @@ def runExperimentsHeuristic ():
 	return allAucs
 
 def compareToCrossTrain (courseId, testX, testY, weekIdxWRTTc):
-	accs = []
-	for modelList in PRETRAINED_MODELS:
-		# Select model that corresponds most closely in time (relative to T_c) to specified weekIdx
-		if weekIdxWRTTc < len(modelList):
-			idx = len(modelList) - weekIdxWRTTc - 1
-		else:
-			idx = 0  # As far back in time as we can go
-		model = modelList[idx]
-		if model.coef_.shape[1] == testX.shape[1]:
-			accs.append(sklearn.metrics.roc_auc_score(testY, model.predict_proba(testX)[:,1]))
-	print "Crosstrain ", courseId, accs
-	if len(accs) > 1:
-		raise Error("Oops -- too many courses fit this one")
-	return accs[0]
+	discipline = COURSE_TO_DISCIPLINE_MAP[courseId]
+	(xtrainCourseId, modelList) = PRETRAINED_MODELS[discipline]
+	if xtrainCourseId == courseId:
+		return float('nan')  # Not allowed to "cross-train" on same course!
+
+	# Select model that corresponds most closely in time (relative to T_c) to specified weekIdx
+	if weekIdxWRTTc < len(modelList):
+		idx = len(modelList) - weekIdxWRTTc - 1
+	else:
+		idx = 0  # As far back in time as we can go
+	model = modelList[idx]
+	acc = sklearn.metrics.roc_auc_score(testY, model.predict_proba(testX)[:,1])
+	print "Crosstrain ", courseId, acc
+	return acc
 
 def runExperiments (allCourseData):
 	allAucs = {}
@@ -424,13 +424,19 @@ def optimize (allCourseData):
 			bestParamValue = paramValue
 	print "Accuracy: {} for {}".format(bestAuc, bestParamValue)
 
+def loadCourseToDisciplineMap ():
+	d = pandas.read_csv('course_to_discipline.csv')
+	return { d.course_id.iloc[i]:d.discipline_grouping.iloc[i] for i in range(len(d)) }
+
 def loadPretrainedModels ():
 	models = cPickle.load(open('results_prong1_models.pkl', 'rb'))
 	# These are courses from different disciplines that were among top 20 HX courses with most certifying participants
-	courseIds = [ 'HarvardX/GSE2x/2T2014', 'HarvardX/HLS2x/1T2015', 'HarvardX/PH525.1x/1T2015' ]
-	return [ models[courseId] for courseId in courseIds ]
+	courseIds = [ 'HarvardX/GSE2x/2T2014', 'HarvardX/PH525.1x/1T2015', 'HarvardX/SPU30x/2T2014', 'HarvardX/AmPoX.4/1T2015' ]
+	theMap = { COURSE_TO_DISCIPLINE_MAP[courseId]:(courseId, models[courseId]) for courseId in courseIds }
+	return theMap
 
 if __name__ == "__main__":
+	COURSE_TO_DISCIPLINE_MAP = loadCourseToDisciplineMap()
 	PRETRAINED_MODELS = loadPretrainedModels()
 
 	DEMOGRAPHICS_ONLY = False
@@ -442,4 +448,4 @@ if __name__ == "__main__":
 	MLR_REG = 1.
 	allAucs = trainAll(allCourseData, DEMOGRAPHICS_ONLY, save=True)
 
-	#trainAllHeuristic()
+	trainAllHeuristic()
