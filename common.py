@@ -6,10 +6,24 @@ import xml.sax.saxutils
 import xml.etree.ElementTree as ET
 import os
 import re
+NUM_WEEKS_HEURISTIC = 2
 HARVARDX = "HarvardX/"
 CHARLESRIVERX_COURSE_ROOT = "/nfs/home/J/jwhitehill/shared_space/ci3_charlesriverx/HarvardX/Courses"
 HX_COURSE_ROOT = "/nfs/home/J/jwhitehill/shared_space/ci3_jwaldo/Harvard"
 RE = re.compile(r'^.*\/course\/[^\/]*.xml$')
+
+def convertFieldsToDummies (pc):
+	continent = [ 'Europe', 'Oceania', 'Africa', 'Asia', 'Americas', 'North America', 'South America' ]
+	LoE = [ 'a', 'none', 'b', 'el', 'hs', 'm', 'p', 'jhs', 'other', 'p_se', 'p_oth']
+	gender = ['null', 'm', 'o', 'f']
+	variableNames = [ 'continent', 'LoE', 'gender' ]
+	variables = [ continent, LoE, gender ]
+	for i, variable in enumerate(variableNames):
+		# Handle NaN
+		idxs = np.nonzero(np.isnan(pc[variable]))[0]
+		pc[variable] = 0
+		theMap = { variables[i][j]:j+1 for j in range(len(variables[i])) }
+		pc[variable ] = pc[variable].map(theMap)
 
 def extractDate (xmlStr):
 	convertedStr = xml.sax.saxutils.unescape(xmlStr).replace("\"", "")  # Remove quotes
