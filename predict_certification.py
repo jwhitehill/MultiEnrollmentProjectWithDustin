@@ -195,6 +195,7 @@ def getXandY (pc, pcd, usernames, T0, Tc, demographicsOnly):
 	DEMOGRAPHIC_FIELDS = [ 'continent', 'YoB', 'LoE', 'gender' ]
 	pc = pc[DEMOGRAPHIC_FIELDS]
 	pc.YoB = convertYoB(pc.YoB)
+	1/0
 	pc = pandas.get_dummies(pc, columns = [ 'continent', 'LoE', 'gender', 'YoB' ], dummy_na = True)
 
 	# For efficiency, figure out which rows of the person-course and person-course-day
@@ -239,7 +240,8 @@ def getXandY (pc, pcd, usernames, T0, Tc, demographicsOnly):
 		# "Heuristic" predictor -- whether the student's last event time is before/after the first week of the course
 		lastEvent = usernamesToLastEventMap[username]
 		if (lastEvent != 'nan') and (lastEvent == lastEvent):  # np.isfinite doesn't work for dates, so we have to check if it equals itself
-			Xheur[i] = np.datetime64(lastEvent[0:10]) > (T0 + np.timedelta64(7*NUM_WEEKS_HEURISTIC, 'D'))  # Did they persist beyond 2 weeks into course?
+			#Xheur[i] = np.datetime64(lastEvent[0:10]) > (T0 + np.timedelta64(7*NUM_WEEKS_HEURISTIC, 'D'))  # Did they persist beyond 2 weeks into course?
+			Xheur[i] = np.datetime64(lastEvent[0:10]) >= (Tc - np.timedelta64(7, 'D'))  # Any action within last week?
 		else:
 			Xheur[i] = 0
 		y[i] = usernamesToCertifiedMap[username]
@@ -354,9 +356,15 @@ def runExperimentsHeuristic ():
 				allAucs[courseId].append(auc)
 	return allAucs
 
-def compareToCrossTrain (courseId, testX, testY):
+def compareToCrossTrain (courseId, testX, testY, weekIdxWRTTc):
 	accs = []
-	for model in PRETRAINED_MODELS:
+	for modelList in PRETRAINED_MODELS:
+		# Select model that corresponds most closely in time (relative to T_c) to specified weekIdx
+		if weekIdxWRTTc < len(modelList):
+			idx = len(modelList) - weekIdxWRTTc - 1
+		else:
+			idx = 0  # As far back in time as we can go
+		model = modelList[idx]
 		if model.coef_.shape[1] == testX.shape[1]:
 			accs.append(sklearn.metrics.roc_auc_score(testY, model.predict_proba(testX)[:,1]))
 	print "Crosstrain ", courseId, accs
@@ -380,7 +388,8 @@ def runExperiments (allCourseData):
 			global MLR_REG
 			print MLR_REG
 			model, auc, dist = trainMLR(trainX, trainY, testX, testY, MLR_REG)
-			allCrosstrainAucs[courseId].append(compareToCrossTrain(courseId, testX, testY))
+			weekIdxWRTTc = len(allCourseData[courseId]) - i - 1
+			allCrosstrainAucs[courseId].append(compareToCrossTrain(courseId, testX, testY, weekIdxWRTTc))
 			allAucs[courseId].append(auc)
 			allDists[courseId].append(dist)
 			models[courseId].append(model)
@@ -417,7 +426,7 @@ def loadPretrainedModels ():
 	models = cPickle.load(open('results_prong1_models.pkl', 'rb'))
 	# These are courses from different disciplines that were among top 20 HX courses with most certifying participants
 	courseIds = [ 'HarvardX/GSE2x/2T2014', 'HarvardX/HLS2x/1T2015', 'HarvardX/PH525.1x/1T2015' ]
-	return [ models[courseId][0] for courseId in courseIds ]
+	return [ models[courseId] for courseId in courseIds ]
 
 if __name__ == "__main__":
 	PRETRAINED_MODELS = loadPretrainedModels()
