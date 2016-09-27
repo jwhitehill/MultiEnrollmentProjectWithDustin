@@ -18,12 +18,13 @@ def convertFieldsToDummies (pc):
 	gender = ['null', 'm', 'o', 'f']
 	variableNames = [ 'continent', 'LoE', 'gender' ]
 	variables = [ continent, LoE, gender ]
-	for i, variable in enumerate(variableNames):
-		# Handle NaN
-		idxs = np.nonzero(np.isnan(pc[variable]))[0]
-		pc[variable] = 0
+	# Now handle individual values of each field
+	for i, variableName in enumerate(variableNames):
 		theMap = { variables[i][j]:j+1 for j in range(len(variables[i])) }
-		pc[variable ] = pc[variable].map(theMap)
+		pc[variableName] = pc[variableName].map(theMap, na_action='ignore')
+	# Now handle NaN
+	pc = pc.fillna({ variableName:0 for variableName in variableNames })
+	return pc
 
 def extractDate (xmlStr):
 	convertedStr = xml.sax.saxutils.unescape(xmlStr).replace("\"", "")  # Remove quotes
