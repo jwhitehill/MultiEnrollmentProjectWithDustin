@@ -2,7 +2,7 @@ import cPickle
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.backends.backend_pdf import PdfPages
-from predict_certification import NUM_WEEKS_HEURISTIC
+from common import NUM_WEEKS_HEURISTIC
 
 def plotEmpiricalDistributions ():
 	allDists = cPickle.load(open("results_prong1_dists.pkl", "rb"))
@@ -43,54 +43,62 @@ def plotAggregateAccuracyCurves ():
 		return x[-1::-1]
 
 	def aggregate (listOfLists):
+		MAX_WEEKS = 8
+		MIN_DATA = 4
 		lengths = np.array([ len(l) for l in listOfLists ])
-		maxLength = np.max(lengths)
+		maxLength = min(MAX_WEEKS, np.max(lengths))
 		vals = []
-		weeks = np.arange(1, maxLength+1)
+		weeks = np.arange(maxLength)
+		times = []
 		for i in weeks:
-			idxs = np.nonzero(lengths >= i)[0]
-			vals.append(np.mean([ reverse(listOfLists[j])[i] for j in idxs ]))
-		return -1 * reverse(weeks), reverse(vals)
+			idxs = np.nonzero(lengths > i)[0]
+			if len(idxs) >= MIN_DATA:
+				vals.append(np.mean([ reverse(listOfLists[j])[i] for j in idxs ]))
+				times.append(weeks[i])
+		return -1 * np.array(reverse(times)), np.array(reverse(vals))
 
-	def doPlot ((t, x), color):
-		handle, = plt.plot(np.arange(t, x*100., color + '-')
-		plt.plot(np.arange(t, x*100., color + 'o')
+	def doPlot ((t, x), color, lineSymbol):
+		handle, = plt.plot(t, x*100., color + lineSymbol)
+		plt.plot(t, x*100., color + 'o')
 		return handle
 
-	resultsCertRepeatedCourse = cPickle.load(open("results_prong1.pkl", "rb"))
-	resultsCertCrosstrain = cPickle.load(open("results_xtrain_prong1.pkl", "rb"))
-	resultsCertRepeatedCourseDemog = cPickle.load(open("results_prong1_demog.pkl", "rb"))
-	resultsCertHeuristic = cPickle.load(open("results_heuristic.pkl", "rb"))
-	(resultsNextWeek, usernames, resultsCert) = cPickle.load(open("results_prong2.pkl", "rb"))
+	resultsRepeatedCourse = cPickle.load(open("results_prong1.pkl", "rb"))
+	resultsCrosstrain = cPickle.load(open("results_xtrain_prong1.pkl", "rb"))
+	resultsHeuristic = cPickle.load(open("results_heuristic.pkl", "rb"))
+	(_, _, resultsNextWeek) = cPickle.load(open("results_prong2.pkl", "rb"))
 
 	# Gather data
-	MAX_WEEKS = 25
-	aggResultsCertRepeatedCourse = []
-	aggResultsCrosstrain = []
-	aggResultsHeuristic = []
-	aggResultsNextWeek = []
-	for courseId in resultsCertRepeatedCourse.keys():
-		allResultsCertRepeatedCourse.append(resultsCertRepeatedCourse[courseId])
-		allResultsCertCrosstrain.append(resultsCertCrosstrain[courseId])
-		allResultsCertHeuristic.append(resultsCertHeuristic[courseId])
-		allResultsCert.append(resultsCert[courseId])
+	allResultsRepeatedCourse = []
+	allResultsCrosstrain = []
+	allResultsHeuristic = []
+	allResultsNextWeek = []
+	for courseId in resultsRepeatedCourse.keys():
+		if courseId in resultsRepeatedCourse.keys():
+			allResultsRepeatedCourse.append(resultsRepeatedCourse[courseId])
+		if courseId in resultsCrosstrain.keys():
+			allResultsCrosstrain.append(resultsCrosstrain[courseId])
+		if courseId in resultsHeuristic.keys():
+			allResultsHeuristic.append(resultsHeuristic[courseId])
+		if courseId in resultsNextWeek.keys():
+			allResultsNextWeek.append(resultsNextWeek[courseId])
 
 	# Average over courses within each week
-	handles.append(doPlot(aggregate(allResultsCertRepeatedCourse)), 'y')
-	handles.append(doPlot(aggregate(allResultsCertCrosstrain)), 'c')
-	handles.append(doPlot(aggregate(allResultsCertHeuristic)), 'm')
-	handles.append(doPlot(aggregate(allResultsCert)), 'k')
-
 	plt.clf()
-	names = [ "Train on prev. course", "Cross-train", "Baseline heuristic", "Train within course" ]
+	handles = []
+	handles.append(doPlot(aggregate(allResultsRepeatedCourse), 'y', '-'))
+	handles.append(doPlot(aggregate(allResultsNextWeek), 'k', '--'))
+	handles.append(doPlot(aggregate(allResultsCrosstrain), 'c', '-.'))
+	handles.append(doPlot(aggregate(allResultsHeuristic), 'm', ':'))
+	names = [ "Train on previous offering", "Train within course", "Train on different course", "Baseline heuristic" ]
 	filename = "aggregate_graph.pdf".format(courseId.replace("/", "-"))
 	pp = PdfPages(filename)
 	plt.legend(handles, names, loc="lower center")
-	plt.title("Aggregate")
+	plt.title("Dropout Prediction Accuracy: Comparison across Approaches")
 	plt.xlabel("Week #")
-	plt.ylabel("Accuracy (%)")
-	#plt.xlim((0., 7.))
-	plt.xlim((-7., 0.))
+	plt.ylabel("Accuracy (AUC %)")
+	#xticks = plt.xticks()[0]
+	#plt.xticks(xticks, np.abs(xticks).astype(np.int32))
+	plt.xlim((-7.5, 0.5))
 	plt.ylim((25., 100.))
 	plt.savefig(pp, format="pdf")
 	pp.close()
@@ -170,7 +178,7 @@ def plotPH231xPredictions ():
 		plt.savefig("{}_week_{}_predictions.png".format(COURSE_ID.replace("/", "-"), weekIdx+1))
 
 if __name__ == "__main__":
-	printAccuracies()
+	#printAccuracies()
 	plotAggregateAccuracyCurves()
 	#plotAccuracyCurves()
 	#plotEmpiricalDistributions()
