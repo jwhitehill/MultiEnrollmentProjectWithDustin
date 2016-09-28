@@ -12,19 +12,23 @@ CHARLESRIVERX_COURSE_ROOT = "/nfs/home/J/jwhitehill/shared_space/ci3_charlesrive
 HX_COURSE_ROOT = "/nfs/home/J/jwhitehill/shared_space/ci3_jwaldo/Harvard"
 RE = re.compile(r'^.*\/course\/[^\/]*.xml$')
 
-def convertFieldsToDummies (pc):
+def getDummiesFixedSet (pc):
 	continent = [ 'Europe', 'Oceania', 'Africa', 'Asia', 'Americas', 'North America', 'South America' ]
-	LoE = [ 'a', 'none', 'b', 'el', 'hs', 'm', 'p', 'jhs', 'other', 'p_se', 'p_oth']
+	LoE = [ 'null', 'a', 'none', 'b', 'el', 'hs', 'm', 'p', 'jhs', 'other', 'p_se', 'p_oth']
 	gender = ['null', 'm', 'o', 'f']
-	variableNames = [ 'continent', 'LoE', 'gender' ]
-	variables = [ continent, LoE, gender ]
-	# Now handle individual values of each field
-	for i, variableName in enumerate(variableNames):
-		theMap = { variables[i][j]:j+1 for j in range(len(variables[i])) }
-		pc[variableName] = pc[variableName].map(theMap, na_action='ignore')
-	# Now handle NaN
-	pc = pc.fillna({ variableName:0 for variableName in variableNames })
-	return pc
+	YoB = range(12)
+	fieldsAndData = [ ('continent', continent), ('LoE', LoE), ('gender', gender), ('YoB', YoB) ]
+	numRows = max(len(continent), len(LoE), len(gender), len(YoB))
+	origLen = pc.shape[0]
+	pc = pc.append(pc.iloc[-numRows:])  # Expand by numRows
+	# Fill the row so that every value in the three columns (continent, LoE, gender, YoB) is represented
+	for i in range(numRows):
+		idx = i + origLen
+		for (field, values) in fieldsAndData:
+			colIdx = np.nonzero(pc.columns == field)[0]  # Figure out which column contains this field
+			pc.iloc[idx,colIdx] = values[i % len(values)]
+	pc = pandas.get_dummies(pc, columns = [ 'continent', 'LoE', 'gender', 'YoB' ], dummy_na = True)
+	return pc.iloc[0:origLen]  # Trim back down and return
 
 def extractDate (xmlStr):
 	convertedStr = xml.sax.saxutils.unescape(xmlStr).replace("\"", "")  # Remove quotes

@@ -6,7 +6,7 @@ import math
 import numpy as np
 import sklearn.metrics
 import sklearn.linear_model
-from common import loadData, getCourseStartAndEndDates, NUM_WEEKS_HEURISTIC, convertFieldsToDummies
+from common import loadData, getCourseStartAndEndDates, NUM_WEEKS_HEURISTIC, getDummiesFixedSet
 
 BATCH_SIZE = 100
 WEEK = np.timedelta64(7, 'D')
@@ -194,11 +194,8 @@ def getXandY (pc, pcd, usernames, T0, Tc, demographicsOnly):
 	DEMOGRAPHIC_FIELDS = [ 'continent', 'YoB', 'LoE', 'gender' ]
 	pc = pc[DEMOGRAPHIC_FIELDS]
 	pc.YoB = convertYoB(pc.YoB)
+	pc = getDummiesFixedSet(pc)
 	#pc = pandas.get_dummies(pc, columns = [ 'continent', 'LoE', 'gender', 'YoB' ], dummy_na = True)
-	pc = convertFieldsToDummies(pc)
-	for field in ['continent', 'YoB', 'LoE', 'gender']:
-		if np.sum(pc[field].isnull()) > 0:
-			1/0
 
 	# For efficiency, figure out which rows of the person-course and person-course-day
 	# datasets belong to which users
