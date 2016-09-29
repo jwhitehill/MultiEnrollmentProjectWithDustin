@@ -104,7 +104,8 @@ def getXandY (pc, pcd, survey, usernames, T0, Tc, normalize):
 	DEMOGRAPHIC_FIELDS = [ 'continent', 'YoB', 'LoE', 'gender' ]
 	pc = pc[DEMOGRAPHIC_FIELDS]
 	pc.YoB = convertYoB(pc.YoB)
-	pc = pandas.get_dummies(pc, columns = [ 'continent', 'LoE', 'gender', 'YoB' ], dummy_na = True)
+	pc = getDummiesFixedSet(pc)
+	#pc = pandas.get_dummies(pc, columns = [ 'continent', 'LoE', 'gender', 'YoB' ], dummy_na = True)
 
 	# For efficiency, figure out which rows of the person-course and person-course-day
 	# datasets belong to which users

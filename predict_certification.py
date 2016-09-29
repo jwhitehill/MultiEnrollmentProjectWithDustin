@@ -359,7 +359,7 @@ def compareToCrossTrain (courseId, testX, testY, weekIdxWRTTc):
 	discipline = COURSE_TO_DISCIPLINE_MAP[courseId]
 	(xtrainCourseId, modelList) = PRETRAINED_MODELS[discipline]
 	if xtrainCourseId == courseId:
-		return float('nan')  # Not allowed to "cross-train" on same course!
+		return (float('nan'), float('nan'))  # Not allowed to "cross-train" on same course!
 
 	# Select model that corresponds most closely in time (relative to T_c) to specified weekIdx
 	if weekIdxWRTTc < len(modelList):
@@ -368,8 +368,20 @@ def compareToCrossTrain (courseId, testX, testY, weekIdxWRTTc):
 		idx = 0  # As far back in time as we can go
 	model = modelList[idx]
 	acc = sklearn.metrics.roc_auc_score(testY, model.predict_proba(testX)[:,1])
-	print "Crosstrain ", courseId, acc
-	return acc
+
+	# Compute mean model over all courses *except* this course
+	almostAllModels = []
+	meanModel = sklearn.linear_model.LogisticRegression(C=1.0)
+	for xcourseId in ALL_MODELS:
+		if xcourseId != courseId:
+			for model in ALL_MODELS[xcourseId]:
+				almostAllModels.append(model)
+	meanModel.coef_ = np.mean([ model.coef_ for model in almostAllModels ], axis=0)
+	meanModel.intercept_ = np.mean([ model.intercept_ for model in almostAllModels ], axis=0)
+	accMean = sklearn.metrics.roc_auc_score(testY, meanModel.predict_proba(testX)[:,1])
+
+	#print "Crosstrain ", courseId, acc, accMean
+	return (acc, accMean)
 
 def runExperiments (allCourseData):
 	allAucs = {}
@@ -388,10 +400,12 @@ def runExperiments (allCourseData):
 			print MLR_REG
 			model, auc, dist = trainMLR(trainX, trainY, testX, testY, MLR_REG)
 			weekIdxWRTTc = len(allCourseData[courseId]) - i - 1
-			allCrosstrainAucs[courseId].append(compareToCrossTrain(courseId, testX, testY, weekIdxWRTTc))
+			aucCrosstrain = compareToCrossTrain(courseId, testX, testY, weekIdxWRTTc)
+			allCrosstrainAucs[courseId].append(aucCrosstrain)
 			allAucs[courseId].append(auc)
 			allDists[courseId].append(dist)
 			models[courseId].append(model)
+			print "comp {} {}".format(auc, aucCrosstrain[1])
 	return allAucs, allCrosstrainAucs, allDists, models
 
 def trainAllHeuristic ():
@@ -430,13 +444,14 @@ def loadPretrainedModels ():
 	# These are courses from different disciplines that were among top 20 HX courses with most certifying participants
 	courseIds = [ 'HarvardX/GSE2x/2T2014', 'HarvardX/PH525.1x/1T2015', 'HarvardX/SPU30x/2T2014', 'HarvardX/AmPoX.4/1T2015' ]
 	theMap = { COURSE_TO_DISCIPLINE_MAP[courseId]:(courseId, models[courseId]) for courseId in courseIds }
-	return theMap
+	
+	return models, theMap
 
 if __name__ == "__main__":
 	COURSE_TO_DISCIPLINE_MAP = loadCourseToDisciplineMap()
-	PRETRAINED_MODELS = loadPretrainedModels()
+	ALL_MODELS, PRETRAINED_MODELS = loadPretrainedModels()
 
-	DEMOGRAPHICS_ONLY = False
+	DEMOGRAPHICS_ONLY = True
 	if 'startDates' not in globals():
 		startDates, endDates = getCourseStartAndEndDates()
 	if 'allCourseData' not in globals():
