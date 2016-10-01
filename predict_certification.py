@@ -182,7 +182,18 @@ def convertYoB (YoB):
 		newYoB[idxs] = i + 1 
 	return newYoB
 
-def getXandY (pc, pcd, usernames, T0, Tc, demographicsOnly):
+def computeDaysSinceLastEvent (pcd, pcDates, T0, Tc, idxsOfUser):
+	if len(idxsOfUser) > 0:
+		nonzeroEventIdxs = idxsOfUser[np.nonzero(pcd.nevents.iloc[idxsOfUser] > 0)[0]]
+	else:
+		nonzeroEventIdxs = []
+	if len(nonzeroEventIdxs) > 0:
+		maxNonzeroEventDate = np.datetime64(np.max(pcdDates.iloc[nonzeroEventIdxs]))
+	else:
+		maxNonzeroEventDate = T0
+	return (Tc - maxNonzeroEventDate) / np.timedelta64(1, 'D')
+
+def getXandY (pc, pcd, survey, usernames, T0, Tc, demographicsOnly):
 	# Restrict analysis to days between T0 and Tc
 	idxs = np.nonzero((pcd.date >= T0) & (pcd.date < Tc))[0]
 	pcd = pcd.iloc[idxs]
@@ -200,6 +211,7 @@ def getXandY (pc, pcd, usernames, T0, Tc, demographicsOnly):
 	# For efficiency, figure out which rows of the person-course and person-course-day
 	# datasets belong to which users
 	usernamesToPcIdxsMap = dict(zip(pcUsernames, range(len(pc))))
+	usernamesToCompletedSurveyMap = dict(zip(survey.username, survey.prs_ResponseID.notnull()))
 	usernamesToPcdIdxsMap = {}
 	for i in range(pcd.shape[0]):
 		username = pcd.username.iloc[i]
@@ -217,7 +229,7 @@ def getXandY (pc, pcd, usernames, T0, Tc, demographicsOnly):
 	pcd = pcd.fillna(value=0)
 
 	NUM_DAYS = 1
-	NUM_FEATURES = NUM_DAYS * len(pcd.columns) + len(pc.columns)
+	NUM_FEATURES = NUM_DAYS * len(pcd.columns) + len(pc.columns) + 1  # "+ 1" -- last feature is numDaysSinceLastEvent
 	X = np.zeros((len(usernames), NUM_FEATURES))
 	Xheur = np.zeros(len(usernames))
 	y = np.zeros(len(usernames))
@@ -225,24 +237,29 @@ def getXandY (pc, pcd, usernames, T0, Tc, demographicsOnly):
 	goodIdxs = []
 	for i, username in enumerate(usernames):
 		if username in usernamesToPcdIdxsMap.keys():
-			idxs = usernamesToPcdIdxsMap[username]
+			idxs = np.array(usernamesToPcdIdxsMap[username])
 			# For each row in the person-course-day dataset for this user, put the
 			# features into the correct column range for that user in the design matrix X.
 			X[i,0:len(pcd.columns)] = np.sum(pcd.iloc[idxs].as_matrix(), axis=0)  # Call as_matrix() so nan is treated as nan in sum!
 			sumDts[i] = np.sum(pcd.sum_dt.iloc[idxs])
 		else:
+			idxs = []
 			X[i,0:len(pcd.columns)] = np.zeros(len(pcd.columns))
 			sumDts[i] = 0
 		# Now append the demographic features
 		demographics = pc.iloc[usernamesToPcIdxsMap[username]]
-		X[i,NUM_DAYS * len(pcd.columns):] = demographics
+		X[i,NUM_DAYS * len(pcd.columns):NUM_FEATURES-2] = demographics
 		# "Heuristic" predictor -- whether the student's last event time is before/after the first week of the course
 		lastEvent = usernamesToLastEventMap[username]
-		if (lastEvent != 'nan') and (lastEvent == lastEvent):  # np.isfinite doesn't work for dates, so we have to check if it equals itself
-			#Xheur[i] = np.datetime64(lastEvent[0:10]) > (T0 + np.timedelta64(7*NUM_WEEKS_HEURISTIC, 'D'))  # Did they persist beyond 2 weeks into course?
-			Xheur[i] = np.datetime64(lastEvent[0:10]) >= (Tc - np.timedelta64(7, 'D'))  # Any action within last week?
-		else:
-			Xheur[i] = 0
+	
+		# Last 2 features	
+		usernamesToCompletedSurveyMap.setdefault(username, False)
+		completedSurvey = usernamesToCompletedSurveyMap[username]
+		X[i,NUM_FEATURES-2] = completedSurvey
+		numDaysSinceLastEvent = computeDaysSinceLastEvent(pcd, pcDates, T0, Tc, idxs)
+		X[i,NUM_FEATURES-1] = numDaysSinceLastEvent
+
+		Xheur[i] = numDaysSinceLastEvent * -1  # "*-1" -- so that fewer days since last action means higher prob. of certification
 		y[i] = usernamesToCertifiedMap[username]
 		if np.isfinite(np.sum(X[i,:])):
 			goodIdxs.append(i)
@@ -298,9 +315,9 @@ def evaluateWithUniformSumDts (y, yhat, sumDts):
 		allYhat += list(yhat[posIdxs]) + list(yhat[negIdxs])
 	return sklearn.metrics.roc_auc_score(allY, allYhat)
 
-def splitAndGetNormalizedFeatures (somePc, somePcd, usernames, T0, Tc, demographicsOnly):
+def splitAndGetNormalizedFeatures (somePc, somePcd, someSurvey, usernames, T0, Tc, demographicsOnly):
 	# Get features and target values
-	X, Xheur, y, sumDts = getXandY(somePc, somePcd, usernames, T0, Tc, demographicsOnly)
+	X, Xheur, y, sumDts = getXandY(somePc, somePcd, someSurvey, usernames, T0, Tc, demographicsOnly)
 	if len(np.nonzero(y == 0)[0]) < MIN_EXAMPLES or len(np.nonzero(y == 1)[0]) < MIN_EXAMPLES:
 		raise ValueError("Too few examples or all one class")
 	# Split into training and testing folds
@@ -323,7 +340,7 @@ def prepareAllData (startDates, endDates, demographicsOnly):
 		# Load data for this course
 		print "Loading {}...".format(courseId)
 		try:
-			somePc, _, somePcd = loadData(courseId)
+			somePc, someSurvey, somePcd = loadData(courseId)
 		except (IOError, pandas.io.parsers.EmptyDataError):
 			print "Skipping"
 			continue
@@ -339,7 +356,7 @@ def prepareAllData (startDates, endDates, demographicsOnly):
 		Tcutoffs = np.arange(T0 + 1*WEEK, Tc+np.timedelta64(1, 'D'), WEEK)
 		for Tcutoff in Tcutoffs:
 			usernames = getRelevantUsers(somePc, Tcutoff)
-			allData = splitAndGetNormalizedFeatures(somePc, somePcd, usernames, T0, Tcutoff, demographicsOnly)
+			allData = splitAndGetNormalizedFeatures(somePc, somePcd, someSurvey, usernames, T0, Tcutoff, demographicsOnly)
 			allCourseData[courseId].append(allData)
 	print "...done"
 	return allCourseData
@@ -451,7 +468,7 @@ if __name__ == "__main__":
 	COURSE_TO_DISCIPLINE_MAP = loadCourseToDisciplineMap()
 	ALL_MODELS, PRETRAINED_MODELS = loadPretrainedModels()
 
-	DEMOGRAPHICS_ONLY = True
+	DEMOGRAPHICS_ONLY = False
 	if 'startDates' not in globals():
 		startDates, endDates = getCourseStartAndEndDates()
 	if 'allCourseData' not in globals():

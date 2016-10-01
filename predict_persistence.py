@@ -6,9 +6,9 @@ import numpy as np
 import sklearn.metrics
 import sklearn.linear_model
 import scipy.stats
-from common import loadData, getCourseStartAndEndDates
+from common import loadData, getCourseStartAndEndDates, getDummiesFixedSet
 from predict_certification import loadPersonCourseData, loadPersonCourseDayData, loadPrecourseSurveyData, \
-                                convertTimes, getRelevantUsers, convertYoB, computeCourseDates, \
+                                convertTimes, getRelevantUsers, convertYoB, computeCourseDates, computeDaysSinceLastEvent, \
 				trainMLR, START_DATES, MIN_EXAMPLES, WEEK, PREDICTION_DATES_1_0 
 
 # Converts each column of the specified matrix into percentiles (over the values
@@ -111,7 +111,6 @@ def getXandY (pc, pcd, survey, usernames, T0, Tc, normalize):
 	# datasets belong to which users
 	usernamesToPcIdxsMap = dict(zip(pcUsernames, range(len(pc))))
 	usernamesToCompletedSurveyMap = dict(zip(survey.username, survey.prs_ResponseID.notnull()))
-	usernamesToSurveyIdxsMap = dict(zip(survey.username, range(len(survey))))
 	usernamesToPcdIdxsMap = {}
 	for i in range(pcd.shape[0]):
 		username = pcd.username.iloc[i]
@@ -132,7 +131,7 @@ def getXandY (pc, pcd, survey, usernames, T0, Tc, normalize):
 		#quantify.quantify(pcd.shape[0], pcd.shape[1], pcd)
 		percentilize(pcd)
 
-	NUM_FEATURES = pcd.shape[1] + len(pc.columns) + 1  # "+ 1" -- encode whether or not user completed precourse survey
+	NUM_FEATURES = pcd.shape[1] + len(pc.columns) + 2  # "+ 2" -- encode whether or not user completed precourse survey; and numDaysSinceLastEvent
 	X = np.zeros((len(usernames), NUM_FEATURES))
 	y = np.zeros(len(usernames))
 	yCert = np.zeros(len(usernames))
@@ -147,10 +146,13 @@ def getXandY (pc, pcd, survey, usernames, T0, Tc, normalize):
 		# Now append the demographic features
 		demographics = pc.iloc[usernamesToPcIdxsMap[username]]
 		X[i,pcd.shape[1]:pcd.shape[1]+len(demographics)] = demographics
-		# Now append the precourse survey features
+		
+		# Last 2 features
 		usernamesToCompletedSurveyMap.setdefault(username, False)
 		completedSurvey = usernamesToCompletedSurveyMap[username]
-		X[i,pcd.shape[1]+len(demographics):] = completedSurvey
+		X[i,NUM_FEATURES-2] = completedSurvey
+		numDaysSinceLastEvent = computeDaysSinceLastEvent(pcd, pcDates, T0, Tc, idxs)
+		X[i,NUM_FEATURES-1] = numDaysSinceLastEvent
 		y[i] = username in usersWhoPersisted
 		yCert[i] = usernamesToCertifiedMap[username]
 	return X, y, yCert
