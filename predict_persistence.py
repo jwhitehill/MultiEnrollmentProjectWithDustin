@@ -121,6 +121,7 @@ def getXandY (pc, pcd, survey, usernames, T0, Tc, normalize):
 	##usernames = list(set(usernames).intersection(usernamesToPcdIdxsMap.keys()))
 
 	# Extract features for all users and put them into the design matrix X
+	pcdDates = pcd.date
 	pcd = pcd.drop([ 'username', 'course_id', 'date', 'last_event' ], axis=1)
 	
 	# Convert NaNs in person-course-day dataset to 0
@@ -151,7 +152,7 @@ def getXandY (pc, pcd, survey, usernames, T0, Tc, normalize):
 		usernamesToCompletedSurveyMap.setdefault(username, False)
 		completedSurvey = usernamesToCompletedSurveyMap[username]
 		X[i,NUM_FEATURES-2] = completedSurvey
-		numDaysSinceLastEvent = computeDaysSinceLastEvent(pcd, pcDates, T0, Tc, idxs)
+		numDaysSinceLastEvent = computeDaysSinceLastEvent(pcd, pcdDates, T0, Tc, idxs)
 		X[i,NUM_FEATURES-1] = numDaysSinceLastEvent
 		y[i] = username in usersWhoPersisted
 		yCert[i] = usernamesToCertifiedMap[username]

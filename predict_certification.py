@@ -182,7 +182,7 @@ def convertYoB (YoB):
 		newYoB[idxs] = i + 1 
 	return newYoB
 
-def computeDaysSinceLastEvent (pcd, pcDates, T0, Tc, idxsOfUser):
+def computeDaysSinceLastEvent (pcd, pcdDates, T0, Tc, idxsOfUser):
 	if len(idxsOfUser) > 0:
 		nonzeroEventIdxs = idxsOfUser[np.nonzero(pcd.nevents.iloc[idxsOfUser] > 0)[0]]
 	else:
@@ -229,7 +229,7 @@ def getXandY (pc, pcd, survey, usernames, T0, Tc, demographicsOnly):
 	pcd = pcd.fillna(value=0)
 
 	NUM_DAYS = 1
-	NUM_FEATURES = NUM_DAYS * len(pcd.columns) + len(pc.columns) + 1  # "+ 1" -- last feature is numDaysSinceLastEvent
+	NUM_FEATURES = NUM_DAYS * len(pcd.columns) + len(pc.columns) + 2  # "+ 2" -- completion of precourse survey; and numDaysSinceLastEvent
 	X = np.zeros((len(usernames), NUM_FEATURES))
 	Xheur = np.zeros(len(usernames))
 	y = np.zeros(len(usernames))
@@ -256,7 +256,7 @@ def getXandY (pc, pcd, survey, usernames, T0, Tc, demographicsOnly):
 		usernamesToCompletedSurveyMap.setdefault(username, False)
 		completedSurvey = usernamesToCompletedSurveyMap[username]
 		X[i,NUM_FEATURES-2] = completedSurvey
-		numDaysSinceLastEvent = computeDaysSinceLastEvent(pcd, pcDates, T0, Tc, idxs)
+		numDaysSinceLastEvent = computeDaysSinceLastEvent(pcd, pcdDates, T0, Tc, idxs)
 		X[i,NUM_FEATURES-1] = numDaysSinceLastEvent
 
 		Xheur[i] = numDaysSinceLastEvent * -1  # "*-1" -- so that fewer days since last action means higher prob. of certification
