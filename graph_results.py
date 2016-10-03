@@ -1,8 +1,10 @@
 import cPickle
+import scipy.stats
+import pandas
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.backends.backend_pdf import PdfPages
-from common import NUM_WEEKS_HEURISTIC
+from common import NUM_WEEKS_HEURISTIC, CHARLESRIVERX_COURSE_ROOT, HARVARDX, convertTimes, loadCourseDates
 
 def plotEmpiricalDistributions ():
 	allDists = cPickle.load(open("results_prong1_dists.pkl", "rb"))
@@ -38,14 +40,77 @@ def printAccuracies ():
 		someResultsCert = np.array(resultsCert[courseId])
 		print courseId, someResultsCert
 
-def plotAggregateAccuracyCurves ():
-	def myMean (x):
-		return np.mean(x[np.nonzero(isfinite(x))[0]])
+def myMedian (x):
+	x = np.array(x)
+	return np.median(x[np.nonzero(np.isfinite(x))[0]])
 
+def myMean (x):
+	x = np.array(x)
+	return np.mean(x[np.nonzero(np.isfinite(x))[0]])
+
+def reportBroadStats ():
+	d = pandas.read_csv('course_to_discipline.csv')
+	courseToDiscipline = { d.course_id.iloc[i]:d.discipline_grouping.iloc[i] for i in range(len(d)) }
+	START_DATES, PREDICTION_DATES_0_5, PREDICTION_DATES_1_0 = loadCourseDates()
+	resultsRepeatedCourse = cPickle.load(open("results_prong1.pkl", "rb"))
+	allStudents = set
+	n = 0
+	for courseId in resultsRepeatedCourse.keys():
+		if len(resultsRepeatedCourse[courseId]) > 0:
+			directory = CHARLESRIVERX_COURSE_ROOT + "/" + courseId.replace(HARVARDX, "").replace("/", "-")
+			pc = pandas.read_csv(directory + "/" + "person_course.csv.gz")
+			pc = convertTimes(pc, "start_time")
+			numRegistrants = np.sum(pc.start_time < PREDICTION_DATES_1_0[courseId])
+			n += numRegistrants
+			idxs = np.nonzero((pc.start_time < PREDICTION_DATES_1_0[courseId]) & (pc.viewed == 1))[0]
+			allStudents = allStudents.union(set(pc.username))
+			pc = pc.iloc[idxs]
+			print "{} & {} & {} & {} & {}\\\\".format( \
+			  courseId, courseToDiscipline[courseId], numRegistrants, pc.shape[0], pc.certified.sum() \
+			)
+	print "Total participants: {}".format(len(allStudents))
+
+def predictAccuracies ():
+	resultsRepeatedCourse = cPickle.load(open("results_prong1.pkl", "rb"))
+	d = pandas.read_csv('course_to_discipline.csv')
+	e = pandas.read_csv('rcodes_by_course_id_10-03-2016.csv')
+	courseToIdxMap = { e.course_id.iloc[i]:i for i in range(len(e)) }
+	#courseToDiscipline = { d.course_id.iloc[i]:d.discipline_grouping.iloc[i] for i in range(len(d)) }
+	#accuraciesByDiscipline = {}
+	#disciplines = set(courseToDiscipline.values()) - set([ 'Alumni' ])
+	#for discipline in disciplines:
+	#	accuraciesByDiscipline.setdefault(discipline, [])
+	#for courseId in resultsRepeatedCourse.keys():
+	#	results = resultsRepeatedCourse[courseId]
+	#	if len(results) > 0:
+	#		accuraciesByDiscipline[courseToDiscipline[courseId]].append(myMedian(results))
+	#for discipline in disciplines:
+	#	print "{}: {}".format(discipline, np.median(accuraciesByDiscipline[discipline]))
+	#print scipy.stats.mstats.kruskalwallis(*(accuraciesByDiscipline.values()))
+	dataByCourse = []
+	for courseId in resultsRepeatedCourse.keys():
+		results = resultsRepeatedCourse[courseId]
+		if len(results) > 0:
+			if courseId in courseToIdxMap.keys():
+				idx = courseToIdxMap[courseId]
+				P = e.P.iloc[idx]
+				V = e.V.iloc[idx]
+				H = e.H.iloc[idx]
+				if np.isfinite(P + V + H):
+					dataByCourse.append((myMean(results), P, V, H))
+				else:
+					print "missing {}".format(courseId)
+			else:
+				print "missing {}".format(courseId)
+	dataByCourse = np.array(dataByCourse)
+	print np.corrcoef(dataByCourse.T)
+	print scipy.stats.pearsonr(dataByCourse[:,0], dataByCourse[:,2])
+
+def plotAggregateAccuracyCurves ():
 	def reverse (x):
 		return x[-1::-1]
 
-	def aggregate (listOfLists):
+	def aggregate (listOfLists, idx = None):
 		MAX_WEEKS = 8
 		MIN_DATA = 4
 		lengths = np.array([ len(l) for l in listOfLists ])
@@ -56,7 +121,10 @@ def plotAggregateAccuracyCurves ():
 		for i in weeks:
 			idxs = np.nonzero(lengths > i)[0]
 			if len(idxs) >= MIN_DATA:
-				vals.append(myMean([ reverse(listOfLists[j])[i] for j in idxs ]))
+				if idx == None:
+					vals.append(myMean([ reverse(listOfLists[j])[i] for j in idxs ]))
+				else:
+					vals.append(myMean([ reverse(listOfLists[j])[i][idx] for j in idxs ]))
 				times.append(weeks[i])
 		return -1 * np.array(reverse(times)), np.array(reverse(vals))
 
@@ -66,18 +134,22 @@ def plotAggregateAccuracyCurves ():
 		return handle
 
 	resultsRepeatedCourse = cPickle.load(open("results_prong1.pkl", "rb"))
+	resultsRepeatedCourseDemog = cPickle.load(open("results_prong1_demog.pkl", "rb"))
 	resultsCrosstrain = cPickle.load(open("results_xtrain_prong1.pkl", "rb"))
 	resultsHeuristic = cPickle.load(open("results_heuristic.pkl", "rb"))
 	(_, _, resultsNextWeek) = cPickle.load(open("results_prong2.pkl", "rb"))
 
 	# Gather data
 	allResultsRepeatedCourse = []
+	allResultsRepeatedCourseDemog = []
 	allResultsCrosstrain = []
 	allResultsHeuristic = []
 	allResultsNextWeek = []
 	for courseId in resultsRepeatedCourse.keys():
 		if courseId in resultsRepeatedCourse.keys():
 			allResultsRepeatedCourse.append(resultsRepeatedCourse[courseId])
+		if courseId in resultsRepeatedCourseDemog.keys():
+			allResultsRepeatedCourseDemog.append(resultsRepeatedCourseDemog[courseId])
 		if courseId in resultsCrosstrain.keys():
 			allResultsCrosstrain.append(resultsCrosstrain[courseId])
 		if courseId in resultsHeuristic.keys():
@@ -89,10 +161,12 @@ def plotAggregateAccuracyCurves ():
 	plt.clf()
 	handles = []
 	handles.append(doPlot(aggregate(allResultsRepeatedCourse), 'y', '-'))
+	handles.append(doPlot(aggregate(allResultsRepeatedCourseDemog), 'g', '-'))
 	handles.append(doPlot(aggregate(allResultsNextWeek), 'k', '--'))
-	handles.append(doPlot(aggregate(allResultsCrosstrain), 'c', '-.'))
+	handles.append(doPlot(aggregate(allResultsCrosstrain, idx=0), 'c', '-.'))
+	handles.append(doPlot(aggregate(allResultsCrosstrain, idx=1), 'b', '-.'))
 	handles.append(doPlot(aggregate(allResultsHeuristic), 'm', ':'))
-	names = [ "Train on previous offering", "Train within course", "Train on different course", "Baseline heuristic" ]
+	names = [ "Train on previous offering", "Train on previous offering (demog only)", "Train within course", "Train on different course", "Train on mean course", "Baseline heuristic" ]
 	filename = "aggregate_graph.pdf".format(courseId.replace("/", "-"))
 	pp = PdfPages(filename)
 	plt.legend(handles, names, loc="lower center")
@@ -182,7 +256,9 @@ def plotPH231xPredictions ():
 
 if __name__ == "__main__":
 	#printAccuracies()
-	plotAggregateAccuracyCurves()
+	reportBroadStats()
+	#predictAccuracies()
+	#plotAggregateAccuracyCurves()
 	#plotAccuracyCurves()
 	#plotEmpiricalDistributions()
 	#plotPH231xPredictions()

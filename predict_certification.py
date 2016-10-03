@@ -6,18 +6,11 @@ import math
 import numpy as np
 import sklearn.metrics
 import sklearn.linear_model
-from common import loadData, getCourseStartAndEndDates, NUM_WEEKS_HEURISTIC, getDummiesFixedSet
+from common import loadCourseDates, loadData, getCourseStartAndEndDates, NUM_WEEKS_HEURISTIC, getDummiesFixedSet
 
 BATCH_SIZE = 100
 WEEK = np.timedelta64(7, 'D')
 MIN_EXAMPLES = 10
-
-def loadCourseDates ():
-	d = pandas.io.parsers.read_csv('pts_accumulation_table.csv')
-	startDates = dict(zip(d.course_id, d['time_pts0.0'].astype(np.datetime64)))
-	predictionDates0_5 = dict(zip(d.course_id, d['time_pts0.5'].astype(np.datetime64)))
-	predictionDates1_0 = dict(zip(d.course_id, d['time_pts1.0'].astype(np.datetime64)))
-	return startDates, predictionDates0_5, predictionDates1_0
 
 START_DATES, PREDICTION_DATES_0_5, PREDICTION_DATES_1_0 = loadCourseDates()
 
@@ -162,11 +155,6 @@ def computeCourseDates (courseId, startDates):
 	Tc = PREDICTION_DATES_1_0[courseId]
 	return T0, Tc
 
-# Get users whose start_date is before Tc and who participated in course
-def getRelevantUsers (pc, Tc):
-	idxs = np.nonzero((pc.start_time < Tc) & (pc.viewed == 1))[0]
-	return pc.username.iloc[idxs]
-
 def convertYoB (YoB):
 	REF_YEAR = 2012
 	ages = REF_YEAR - YoB
@@ -182,9 +170,9 @@ def convertYoB (YoB):
 		newYoB[idxs] = i + 1 
 	return newYoB
 
-def computeDaysSinceLastEvent (pcd, pcdDates, T0, Tc, idxsOfUser):
+def computeDaysSinceLastEvent (nevents, pcdDates, T0, Tc, idxsOfUser):
 	if len(idxsOfUser) > 0:
-		nonzeroEventIdxs = idxsOfUser[np.nonzero(pcd.nevents.iloc[idxsOfUser] > 0)[0]]
+		nonzeroEventIdxs = idxsOfUser[np.nonzero(nevents.iloc[idxsOfUser] > 0)[0]]
 	else:
 		nonzeroEventIdxs = []
 	if len(nonzeroEventIdxs) > 0:
@@ -256,7 +244,7 @@ def getXandY (pc, pcd, survey, usernames, T0, Tc, demographicsOnly):
 		usernamesToCompletedSurveyMap.setdefault(username, False)
 		completedSurvey = usernamesToCompletedSurveyMap[username]
 		X[i,NUM_FEATURES-2] = completedSurvey
-		numDaysSinceLastEvent = computeDaysSinceLastEvent(pcd, pcdDates, T0, Tc, idxs)
+		numDaysSinceLastEvent = computeDaysSinceLastEvent(pcd.nevents, pcdDates, T0, Tc, idxs)
 		X[i,NUM_FEATURES-1] = numDaysSinceLastEvent
 
 		Xheur[i] = numDaysSinceLastEvent * -1  # "*-1" -- so that fewer days since last action means higher prob. of certification
@@ -265,7 +253,9 @@ def getXandY (pc, pcd, survey, usernames, T0, Tc, demographicsOnly):
 			goodIdxs.append(i)
 	
 	if demographicsOnly:
-		X[:,0:len(pcd.columns)] = 0  # Zero out the non-demographics information
+		# Zero out the non-demographics information
+		X[:,0:NUM_DAYS*len(pcd.columns)] = 0
+		X[:,NUM_FEATURES-2:] = 0
 	return X[goodIdxs,:], Xheur[goodIdxs], y[goodIdxs], np.sum(sumDts[goodIdxs,:], axis=1)
 
 def normalize (trainX, testX):

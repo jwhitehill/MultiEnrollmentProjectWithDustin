@@ -12,6 +12,18 @@ CHARLESRIVERX_COURSE_ROOT = "/nfs/home/J/jwhitehill/shared_space/ci3_charlesrive
 HX_COURSE_ROOT = "/nfs/home/J/jwhitehill/shared_space/ci3_jwaldo/Harvard"
 RE = re.compile(r'^.*\/course\/[^\/]*.xml$')
 
+def loadCourseDates ():
+	d = pandas.io.parsers.read_csv('pts_accumulation_table.csv')
+	startDates = dict(zip(d.course_id, d['time_pts0.0'].astype(np.datetime64)))
+	predictionDates0_5 = dict(zip(d.course_id, d['time_pts0.5'].astype(np.datetime64)))
+	predictionDates1_0 = dict(zip(d.course_id, d['time_pts1.0'].astype(np.datetime64)))
+	return startDates, predictionDates0_5, predictionDates1_0
+
+# Get users whose start_date is before Tc and who participated in course
+def getRelevantUsers (pc, Tc):
+	idxs = np.nonzero((pc.start_time < Tc) & (pc.viewed == 1))[0]
+	return pc.username.iloc[idxs]
+
 def getDummiesFixedSet (pc):
 	continent = [ 'Europe', 'Oceania', 'Africa', 'Asia', 'Americas', 'North America', 'South America' ]
 	LoE = [ 'null', 'a', 'none', 'b', 'el', 'hs', 'm', 'p', 'jhs', 'other', 'p_se', 'p_oth']

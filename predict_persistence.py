@@ -6,9 +6,9 @@ import numpy as np
 import sklearn.metrics
 import sklearn.linear_model
 import scipy.stats
-from common import loadData, getCourseStartAndEndDates, getDummiesFixedSet
+from common import loadData, getCourseStartAndEndDates, getDummiesFixedSet, getRelevantUsers
 from predict_certification import loadPersonCourseData, loadPersonCourseDayData, loadPrecourseSurveyData, \
-                                convertTimes, getRelevantUsers, convertYoB, computeCourseDates, computeDaysSinceLastEvent, \
+                                convertTimes, convertYoB, computeCourseDates, computeDaysSinceLastEvent, \
 				trainMLR, START_DATES, MIN_EXAMPLES, WEEK, PREDICTION_DATES_1_0 
 
 # Converts each column of the specified matrix into percentiles (over the values
@@ -123,6 +123,7 @@ def getXandY (pc, pcd, survey, usernames, T0, Tc, normalize):
 	# Extract features for all users and put them into the design matrix X
 	pcdDates = pcd.date
 	pcd = pcd.drop([ 'username', 'course_id', 'date', 'last_event' ], axis=1)
+	nevents = pcd.nevents
 	
 	# Convert NaNs in person-course-day dataset to 0
 	pcd = pcd.fillna(value=0)
@@ -138,11 +139,12 @@ def getXandY (pc, pcd, survey, usernames, T0, Tc, normalize):
 	yCert = np.zeros(len(usernames))
 	for i, username in enumerate(usernames):
 		if username in usernamesToPcdIdxsMap.keys():
-			idxs = usernamesToPcdIdxsMap[username]
+			idxs = np.array(usernamesToPcdIdxsMap[username])
 			# For each row in the person-course-day dataset for this user, put the
 			# features into the correct column range for that user in the design matrix X.
 			X[i,0:pcd.shape[1]] = np.sum(pcd[idxs,:], axis=0)
 		else:
+			idxs = []
 			X[i,0:pcd.shape[1]] = np.zeros(pcd.shape[1])
 		# Now append the demographic features
 		demographics = pc.iloc[usernamesToPcIdxsMap[username]]
@@ -152,7 +154,7 @@ def getXandY (pc, pcd, survey, usernames, T0, Tc, normalize):
 		usernamesToCompletedSurveyMap.setdefault(username, False)
 		completedSurvey = usernamesToCompletedSurveyMap[username]
 		X[i,NUM_FEATURES-2] = completedSurvey
-		numDaysSinceLastEvent = computeDaysSinceLastEvent(pcd, pcdDates, T0, Tc, idxs)
+		numDaysSinceLastEvent = computeDaysSinceLastEvent(nevents, pcdDates, T0, Tc, idxs)
 		X[i,NUM_FEATURES-1] = numDaysSinceLastEvent
 		y[i] = username in usersWhoPersisted
 		yCert[i] = usernamesToCertifiedMap[username]
